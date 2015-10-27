@@ -1,0 +1,58 @@
+Example:
+
+val textFile = spark.textFile("hdfs://...")
+val errors = textFile.filter(line => line.contains("ERROR"))
+// Count all the errors
+errors.count()
+// Count errors mentioning MySQL
+errors.filter(line => line.contains("MySQL")).count()
+// Fetch the MySQL errors as an array of strings
+errors.filter(line => line.contains("MySQL")).collect()
+
+textFile    //in SparkContext.scala 
+    return Hadoop RDD
+
+filter  //in RDD.scala
+    return MapPartitionRDD
+
+count   //in RDD.scala
+    => runJob
+    => dagScheduler.runJob
+
+dagScheduler.runJob //in DAGScheduler.scala
+    submitJob
+
+submitJob   //in DAGScheduler.scala
+    eventProcessLoop.post(JobSubmitted ...)
+
+dagScheduler.handleJobSubmitted //in DAGScheduler.scala
+    finalStage = newResultStage //get the whole DAG here
+        getParentStagesAndId
+        getParentStages
+        1. shufDep: getShuffleMapStage
+            newOrUsedShuffleStage   //register ancestor shuffle dependencies
+            // communicate with MapOutputTracker
+        2. recursively visit parent
+    job = new ActiveJob
+    listenerBus.post(SparkListenerJobStart ...)
+    submitStage //generate the specific tasks here
+        submitMissingTasks
+        taksScheduler.submitTasks
+
+    //Schedule tasks
+    //TaskSchedulerImpl.scala
+    submitTasks
+    schedulableBuilder.addTAskSetManager    //user set their TaskSetManager here
+
+    //send tasks
+    SchedulerBackend.reviveOffers
+    DriverEndpoint  //in CoarseGrainedSchedulerBackend.scala
+    makeOffer()
+    launchTasks()
+    executorData.executorEndpoint.send(LaunchTask ...)
+
+    
+SparkListenerJobStart => SparkListenerBus
+    in SparkListenerBus.scala
+    SparkListenerJobStart
+    listener.onJobStart
