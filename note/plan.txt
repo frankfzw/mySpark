@@ -1,0 +1,8 @@
+in DAGScheduler.scala
+
+handleTaskCompletion
+    call the submitWaitingStage before the tasks in shuffle stage finished.
+    may cause the FetchFailed on the next stage, so we should modify the strategy of fetch of executor
+
+Executor: run
+    

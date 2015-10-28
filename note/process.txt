@@ -56,3 +56,13 @@ SparkListenerJobStart => SparkListenerBus
     in SparkListenerBus.scala
     SparkListenerJobStart
     listener.onJobStart
+    
+
+//Submit Stage
+
+sched.dagScheduler.taskEnded(...    //TaskSetManager.scala
+
+handleTaskCompletion    //DAGScheduler.scala
+    ResultTask:
+    ShuffleMapTask: //confused about "Mark any map-stage jobs waiting on this stage as fininshed"
+    submitWaitingStages()
