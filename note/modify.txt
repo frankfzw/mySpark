@@ -1,0 +1,18 @@
+Stage:
+    add var PENDING = false. The default status of a stage is false.
+    When it's submitted with unfinished parents, we set PENDING = true;
+DAGScheduler:
+    submitStage: if (missing.isEmpty), this stage will become running. So we check every stage in waitingStages, if their parents are all running, we try to submit the stage and mark PENDING = true;
+
+
+Issues:
+    When the next stage call submitMissingTasks, it will call getPreferredLocs and then call getPreferredLocsInternal. If it's not cached, it will call RDD's preferredLocations.
+    In our modification, this rdd will always be the ShuffledRDD. So in ShuffledRDD, it calls getPreferredLocations, which ask mapOutputTracker for the locations by calling getPreferredLocationsForShuffle.
+    In MapOutputTracker, it calls getLocationsWithLargestOutputs. The process fails here.
+    It is because that the register of MapOutput happens when all map tasks finish.
+
+Solution (TODO):
+    1. When we find a PENDING stage in submitMissingTasks, we call the getRandomLoc() which is added by ourselves to get some random locations.
+    2. Ask BlockManager to get some BlockManagerId, convert it to the host name (String)
+        Maybe we have to add some message here to get the whole block message from BlockManagerMasterEndpoint
+    3. return TaskLocation
