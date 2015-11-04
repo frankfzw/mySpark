@@ -61,6 +61,7 @@ private[scheduler] abstract class Stage(
     val callSite: CallSite)
   extends Logging {
 
+  var PENDING = false;
   val numPartitions = rdd.partitions.size
 
   /** Set of jobs that this stage belongs to. */
