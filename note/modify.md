@@ -46,6 +46,7 @@ Since the RDD of the early scheduling stage will always be a ShuffledRDD, we mod
 
 ## MapOutputTracker
 ### getMapSizesByExecutorId: 
-    called by BlockStoreShuffleReader, call convertMapStatuses to get the BlockManagerId and the corresponding BlockId 
+    called by BlockStoreShuffleReader, call convertMapStatuses to get the BlockManagerId and the 
+    corresponding BlockId 
 ### covertMapStatuses: 
     if we get a null status which means the map is unfinished, we return a empty Seq
