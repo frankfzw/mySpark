@@ -1,8 +1,8 @@
 ##Stage
-    add 
+    add
     ```scala 
-    var PENDING = false
-    ``` 
+    val PENDING = false
+    ```
     The default status of a stage is false.
     When it's submitted with unfinished parents, we set PENDING = true;
 
