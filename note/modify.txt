@@ -1,18 +1,36 @@
 Stage:
     add var PENDING = false. The default status of a stage is false.
     When it's submitted with unfinished parents, we set PENDING = true;
+
 DAGScheduler:
     submitStage: if (missing.isEmpty), this stage will become running. So we check every stage in waitingStages, if their parents are all running, we try to submit the stage and mark PENDING = true;
+    submitMissingTasks: if the stage is PENDING, we use getRandomLocs to assign the tasks to the random locations.
+    getRandomLocs(new added): ask the BlockManagerMaster to get the acitve block host and assign the task to the locations.
 
+BlockManagerMaster:
+    getBlockManagerList(): return a Seq of BlockManagerId to the DAGScheduler.
+                           It calls the BlockManagerMasterEndpoint to fetch the whole list of BlockManagerId
 
-Issues:
-    When the next stage call submitMissingTasks, it will call getPreferredLocs and then call getPreferredLocsInternal. If it's not cached, it will call RDD's preferredLocations.
-    In our modification, this rdd will always be the ShuffledRDD. So in ShuffledRDD, it calls getPreferredLocations, which ask mapOutputTracker for the locations by calling getPreferredLocationsForShuffle.
-    In MapOutputTracker, it calls getLocationsWithLargestOutputs. The process fails here.
-    It is because that the register of MapOutput happens when all map tasks finish.
+BlockManagerMasterEndpoint:
+    add a case which is GetBlockMangerList. It calls the function getBlockManagerList()
+    getBlockMangerList(): return the blockMangerInfo.keySet which is a collection of BlockManagerId
 
-Solution (TODO):
-    1. When we find a PENDING stage in submitMissingTasks, we call the getRandomLoc() which is added by ourselves to get some random locations.
-    2. Ask BlockManager to get some BlockManagerId, convert it to the host name (String)
-        Maybe we have to add some message here to get the whole block message from BlockManagerMasterEndpoint
-    3. return TaskLocation
+These are for the early scheduling of stage and its tasks.
+
+Now when we start the tasks, we have to make the executor waiting until the ShuffleStage finishes.
+
+Since the RDD of the early scheduling stage will always be a ShuffledRDD, we modified the ShuffledRDD to make it wait.
+
+ShuffledRDD
+    compute: sleep 50 ms and do check until the read doesn't return null
+
+BlockStoreShuffleReader
+    It call mapOutputTracker to fill the ShuffleBlockFetcherIterator in read
+    read: modify the function, if the blockFetcherItr is empty, return the null
+
+ShuffleBlockFetcherIterator
+    empty(new added): return true if it didn't get the blocksByAddress from MapOutputTracker. 
+
+MapOutputTracker
+    getMapSizesByExecutorId: called by BlockStoreShuffleReader, call convertMapStatuses to get the BlockManagerId and the corresponding BlockId 
+    covertMapStatuses: if we get a null status which means the map is unfinished, we return a empty Seq
