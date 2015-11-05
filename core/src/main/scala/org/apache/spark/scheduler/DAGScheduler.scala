@@ -22,7 +22,7 @@ import java.util.Properties
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
-import scala.collection.Map
+import scala.collection.{mutable, Map}
 import scala.collection.mutable.{ArrayBuffer, HashMap, HashSet, Stack}
 import scala.concurrent.duration._
 import scala.language.existentials
@@ -979,7 +979,8 @@ class DAGScheduler(
     // frankfzw: assign the reducers randomly
     val taskIdToLocations = {
       if (stage.PENDING) {
-        partitionsToCompute.map {id => (id, getRandomLocs(stage.rdd, id))}.toMap
+        // partitionsToCompute.map {id => (id, getRandomLocs(stage.rdd, id))}.toMap
+        getRandomLocs(stage.id, partitionsToCompute.toList)
       } else {
         try {
           stage match {
@@ -1002,6 +1003,10 @@ class DAGScheduler(
             return
         }
       }
+    }
+
+    for (l <- taskIdToLocations) {
+      println("frankfzw: stage: " + stage + " task id: " + l._1 + " location: " + l._2)
     }
 
 
@@ -1545,12 +1550,19 @@ class DAGScheduler(
 
   /**
    * Get the random location for the next stage
-   *
+   * Added by frankfzw
+   * @return the map of partion and TaskLocation
    */
   private[spark]
-  def getRandomLocs(rdd: RDD[_], partition: Int): Seq[TaskLocation] = {
-    // TODO frankfzw get some random BlockManagerId and return TaskLocation
-    return Nil
+  def getRandomLocs(stageId: Int, partitionToCompute: List[Int]): Map[Int, Seq[TaskLocation]] = {
+    val res = new mutable.HashMap[Int, Seq[TaskLocation]]()
+    val blockManagerList = blockManagerMaster.getBlockManagerList()
+    for (p <- partitionToCompute) {
+      val location = Seq[String](blockManagerList(p % blockManagerList.length).host)
+      val taskLocation = location.map(TaskLocation(_))
+      res.put(p, taskLocation)
+    }
+    return res
   }
 
   /**
@@ -1574,16 +1586,16 @@ class DAGScheduler(
     val cached = getCacheLocs(rdd)(partition)
     if (cached.nonEmpty) {
       //frankfzw: print cached location here
-      val temp = cached.map(_.clone())
-      temp.map(x => "frankfzw: " + x.toString).foreach(println)
+      // val temp = cached.map(_.clone())
+      // temp.map(x => "frankfzw: " + x.toString).foreach(println)
       return cached
     }
     // If the RDD has some placement preferences (as is the case for input RDDs), get those
     val rddPrefs = rdd.preferredLocations(rdd.partitions(partition)).toList
     if (rddPrefs.nonEmpty) {
       //frankfzw: print here
-      val temp = rddPrefs.map(_.clone())
-      temp.map(x => "frankfzw: " + x.toString).foreach(println)
+      // val temp = rddPrefs.map(_.clone())
+      // temp.map(x => "frankfzw: " + x.toString).foreach(println)
       return rddPrefs.map(TaskLocation(_))
     }
 
@@ -1596,7 +1608,7 @@ class DAGScheduler(
           val locs = getPreferredLocsInternal(n.rdd, inPart, visited)
           if (locs != Nil) {
             //frankfzw: print here
-            locs.foreach(println)
+            // locs.foreach(println)
             return locs
           }
         }
