@@ -22,7 +22,7 @@ import java.util.Properties
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
-import scala.collection.Map
+import scala.collection.{mutable, Map}
 import scala.collection.mutable.{ArrayBuffer, HashMap, HashSet, Stack}
 import scala.concurrent.duration._
 import scala.language.existentials
@@ -912,11 +912,24 @@ class DAGScheduler(
         if (missing.isEmpty) {
           logInfo("Submitting " + stage + " (" + stage.rdd + "), which has no missing parents")
           submitMissingTasks(stage, jobId.get)
+          for (child <- waitingStages) {
+           //frankfzw: submit stage if the parent stages are all running
+            logInfo("frankfzw: submitStage waitingStages " + child)
+            val parents = getMissingParentStages(child)
+            if (parents.filter(s => runningStages(s)) == parents) {
+              logInfo("frankfzw: submitting pending stage" + child + " (" + child.rdd + "), whose parents are all running")
+              child.PENDING = true;
+              submitMissingTasks(child, jobId.get)
+            }
+          }
         } else {
+          //frankfzw: add the stage to the waitingStage at first
+          waitingStages += stage
+          logInfo("frankfzw: add " + stage + " to the waitingStages at first")
           for (parent <- missing) {
             submitStage(parent)
           }
-          waitingStages += stage
+
         }
       }
     } else {
@@ -927,6 +940,7 @@ class DAGScheduler(
   /** Called when stage's parents are available and we can now do its task. */
   private def submitMissingTasks(stage: Stage, jobId: Int) {
     logDebug("submitMissingTasks(" + stage + ")")
+    logInfo("frankfzw: submitMissingTasks( " + stage + " )")
     // Get our pending tasks and remember them in our pendingTasks entry
     stage.pendingPartitions.clear()
 
@@ -945,6 +959,7 @@ class DAGScheduler(
       }
     }
 
+    logInfo("frankfzw: stage " + stage + " all partition number " + allPartitions.length + " partition to computer " + partitionsToCompute.length)
     // Create internal accumulators if the stage has no accumulators initialized.
     // Reset internal accumulators only if this stage is not partially submitted
     // Otherwise, we may override existing accumulator values from some tasks
@@ -955,34 +970,52 @@ class DAGScheduler(
     val properties = jobIdToActiveJob.get(stage.firstJobId).map(_.properties).orNull
 
     runningStages += stage
+
     // SparkListenerStageSubmitted should be posted before testing whether tasks are
     // serializable. If tasks are not serializable, a SparkListenerStageCompleted event
     // will be posted, which should always come after a corresponding SparkListenerStageSubmitted
     // event.
     outputCommitCoordinator.stageStart(stage.id)
-    val taskIdToLocations = try {
-      stage match {
-        case s: ShuffleMapStage =>
-          partitionsToCompute.map { id => (id, getPreferredLocs(stage.rdd, id))}.toMap
-        case s: ResultStage =>
-          val job = s.resultOfJob.get
-          partitionsToCompute.map { id =>
-            val p = s.partitions(id)
-            (id, getPreferredLocs(stage.rdd, p))
-          }.toMap
+    // frankfzw: assign the reducers randomly
+    val taskIdToLocations = {
+      if (stage.PENDING) {
+        // partitionsToCompute.map {id => (id, getRandomLocs(stage.rdd, id))}.toMap
+        getRandomLocs(stage.id, partitionsToCompute.toList)
+      } else {
+        try {
+          stage match {
+            case s: ShuffleMapStage =>
+              partitionsToCompute.map { id => (id, getPreferredLocs(stage.rdd, id))}.toMap
+            case s: ResultStage =>
+              val job = s.resultOfJob.get
+              partitionsToCompute.map { id =>
+                val p = s.partitions(id)
+                (id, getPreferredLocs(stage.rdd, p))
+              }.toMap
+          }
+        } catch {
+          case NonFatal(e) =>
+            logInfo("frankfzw: submitMissingTasks task creation failed on stage " + stage)
+            stage.makeNewStageAttempt(partitionsToCompute.size)
+            listenerBus.post(SparkListenerStageSubmitted(stage.latestInfo, properties))
+            abortStage(stage, s"Task creation failed: $e\n${e.getStackTraceString}", Some(e))
+            runningStages -= stage
+            return
+        }
       }
-    } catch {
-      case NonFatal(e) =>
-        stage.makeNewStageAttempt(partitionsToCompute.size)
-        listenerBus.post(SparkListenerStageSubmitted(stage.latestInfo, properties))
-        abortStage(stage, s"Task creation failed: $e\n${e.getStackTraceString}", Some(e))
-        runningStages -= stage
-        return
     }
+
+    for (l <- taskIdToLocations) {
+      println("frankfzw: stage: " + stage + " task id: " + l._1 + " location: " + l._2)
+    }
+
 
     stage.makeNewStageAttempt(partitionsToCompute.size, taskIdToLocations.values.toSeq)
     listenerBus.post(SparkListenerStageSubmitted(stage.latestInfo, properties))
 
+    // frankfzw: print running stage here for debug
+    // for (s <- runningStages)
+    //   logInfo("frankfzw: running stage " + s)
     // TODO: Maybe we can keep the taskBinary in Stage to avoid serializing it multiple times.
     // Broadcasted binary for the task, used to dispatch tasks to executors. Note that we broadcast
     // the serialized copy of the RDD and for each task we will deserialize it, which means each
@@ -1516,6 +1549,23 @@ class DAGScheduler(
   }
 
   /**
+   * Get the random location for the next stage
+   * Added by frankfzw
+   * @return the map of partion and TaskLocation
+   */
+  private[spark]
+  def getRandomLocs(stageId: Int, partitionToCompute: List[Int]): Map[Int, Seq[TaskLocation]] = {
+    val res = new mutable.HashMap[Int, Seq[TaskLocation]]()
+    val blockManagerList = blockManagerMaster.getBlockManagerList()
+    for (p <- partitionToCompute) {
+      val location = Seq[String](blockManagerList(p % blockManagerList.length).host)
+      val taskLocation = location.map(TaskLocation(_))
+      res.put(p, taskLocation)
+    }
+    return res
+  }
+
+  /**
    * Recursive implementation for getPreferredLocs.
    *
    * This method is thread-safe because it only accesses DAGScheduler state through thread-safe
@@ -1535,11 +1585,17 @@ class DAGScheduler(
     // If the partition is cached, return the cache locations
     val cached = getCacheLocs(rdd)(partition)
     if (cached.nonEmpty) {
+      //frankfzw: print cached location here
+      // val temp = cached.map(_.clone())
+      // temp.map(x => "frankfzw: " + x.toString).foreach(println)
       return cached
     }
     // If the RDD has some placement preferences (as is the case for input RDDs), get those
     val rddPrefs = rdd.preferredLocations(rdd.partitions(partition)).toList
     if (rddPrefs.nonEmpty) {
+      //frankfzw: print here
+      // val temp = rddPrefs.map(_.clone())
+      // temp.map(x => "frankfzw: " + x.toString).foreach(println)
       return rddPrefs.map(TaskLocation(_))
     }
 
@@ -1551,6 +1607,8 @@ class DAGScheduler(
         for (inPart <- n.getParents(partition)) {
           val locs = getPreferredLocsInternal(n.rdd, inPart, visited)
           if (locs != Nil) {
+            //frankfzw: print here
+            // locs.foreach(println)
             return locs
           }
         }

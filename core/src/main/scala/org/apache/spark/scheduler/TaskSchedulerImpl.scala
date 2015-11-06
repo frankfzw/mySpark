@@ -172,6 +172,7 @@ private[spark] class TaskSchedulerImpl(
       if (conflictingTaskSet) {
         throw new IllegalStateException(s"more than one active taskSet for stage $stage:" +
           s" ${stageTaskSets.toSeq.map{_._2.taskSet.id}.mkString(",")}")
+        //logInfo("frankfzw: " + taskSet.id + " should waiting for parent")
       }
       schedulableBuilder.addTaskSetManager(manager, manager.taskSet.properties)
 

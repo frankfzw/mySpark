@@ -114,6 +114,9 @@ class BlockManagerMasterEndpoint(
     case BlockManagerHeartbeat(blockManagerId) =>
       context.reply(heartbeatReceived(blockManagerId))
 
+    case GetBlockManagerList =>
+      context.reply(getBolckManagerList())
+
     case HasCachedBlocks(executorId) =>
       blockManagerIdByExecutor.get(executorId) match {
         case Some(bm) =>
@@ -127,6 +130,14 @@ class BlockManagerMasterEndpoint(
       }
   }
 
+  /**
+   * return the all active BlockManagerId
+   * added by frankfzw
+   * @return
+   */
+  private def getBolckManagerList(): Seq[BlockManagerId] = {
+    blockManagerInfo.keySet.toSeq
+  }
   private def removeRdd(rddId: Int): Future[Seq[Int]] = {
     // First remove the metadata for the given RDD, and then asynchronously remove the blocks
     // from the slaves.

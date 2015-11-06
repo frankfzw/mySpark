@@ -103,6 +103,7 @@ private[spark] class CompressedMapStatus(
   override def location: BlockManagerId = loc
 
   override def getSizeForBlock(reduceId: Int): Long = {
+    //assert(reduceId < compressedSizes.length, s"CompressedMapStatus: reduceId ${reduceId} out of range")
     MapStatus.decompressSize(compressedSizes(reduceId))
   }
 

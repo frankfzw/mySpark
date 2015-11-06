@@ -1,0 +1,13 @@
+1. Make the scheduler happen before the ShuffleMapStage finished.
+	in DAGScheduler.scala handleTaskCompletion()
+		But we set the status of ResultStage to a new one, let's say isReady, as soon as the ShuffleMapStage is submmited.
+		DAGScheduler submit ResultStage(call submitWaitingStages()) when it isReady.
+		When the function submitStage runs, we modify the getMissingParentStages() to make the submission success.
+		When call submitMissingTasks, we add a special status to the task.
+
+	in Executor.scala
+		When the task contains the special status we added, we should make it waitting. 
+
+2. Change the fetch to push
+	We should add a new Class like MapOutputTracker.scala into SparkEnv to record the localtion of reducers.
+	Add a new Class extends ShuffleWrite with logging, which write the intermediate data to the reduce according the the location of map.
