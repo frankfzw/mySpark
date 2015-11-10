@@ -27,7 +27,7 @@ import scala.collection.mutable.{ArrayBuffer, HashMap, HashSet, Map}
 import scala.reflect.ClassTag
 
 import org.apache.spark.rpc.{RpcEndpointRef, RpcEnv, RpcCallContext, RpcEndpoint}
-import org.apache.spark.scheduler.MapStatus
+import org.apache.spark.scheduler.{ReduceStatus, MapStatus}
 import org.apache.spark.shuffle.MetadataFetchFailedException
 import org.apache.spark.storage.{BlockId, BlockManagerId, ShuffleBlockId}
 import org.apache.spark.util._
@@ -37,6 +37,9 @@ import scala.util.control.Breaks._
 private[spark] sealed trait MapOutputTrackerMessage
 private[spark] case class GetMapOutputStatuses(shuffleId: Int)
   extends MapOutputTrackerMessage
+// frankfzw: add a message to fetch the reduce status
+private[spark] case class GetReduceStatus(shuffleId: Int) extends MapOutputTrackerMessage
+
 private[spark] case object StopMapOutputTracker extends MapOutputTrackerMessage
 
 /** RpcEndpoint class for MapOutputTrackerMaster */
@@ -63,6 +66,9 @@ private[spark] class MapOutputTrackerMasterEndpoint(
       } else {
         context.reply(mapOutputStatuses)
       }
+
+    case GetReduceStatus(shuffleId: Int) =>
+      // TODO frankfzw return the serialized Array of ReduceStatus
 
     case StopMapOutputTracker =>
       logInfo("MapOutputTrackerMasterEndpoint stopped!")
@@ -92,6 +98,16 @@ private[spark] abstract class MapOutputTracker(conf: SparkConf) extends Logging 
    * thread-safe map.
    */
   protected val mapStatuses: Map[Int, Array[MapStatus]]
+
+  /**
+   * added by frankfzw
+   *
+   * This HashMap stores the shuffleId and the corresponding reducer data
+   *
+   * On the driver, it serves as the source of reduce location updated by getRandomLocs the DAGScheduler
+   * On the executors, it simply serves as a cache, like the mapStatuses
+   */
+  protected val reduceStatuses: Map[Int, Array[ReduceStatus]]
 
   /**
    * Incremented every time a fetch fails so that client nodes know to clear
@@ -232,6 +248,15 @@ private[spark] abstract class MapOutputTracker(conf: SparkConf) extends Logging 
         throw new MetadataFetchFailedException(
           shuffleId, -1, "Missing all output locations for shuffle " + shuffleId)
       }
+    } else {
+      return statuses
+    }
+  }
+
+  private def getReduceStatuses(shuffleId: Int): Array[ReduceStatus] = {
+    val statuses = reduceStatuses.get(shuffleId).orNull
+    if (statuses == null) {
+     // TODO frankfzw ask the MapOutputTrackerMaster to get the new data.
     } else {
       return statuses
     }

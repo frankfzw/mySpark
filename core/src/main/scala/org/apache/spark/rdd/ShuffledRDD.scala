@@ -99,7 +99,7 @@ class ShuffledRDD[K: ClassTag, V: ClassTag, C: ClassTag](
     while (SparkEnv.get.shuffleManager.getReader(dep.shuffleHandle, split.index, split.index + 1, context).read() == null) {
       Thread.sleep(50)
       time = time + 1
-      logInfo("frankfzw: Map partion " + split + " is not ready, waiting for " + time * 500 + " milliseconds")
+      logInfo("frankfzw: Map partion " + split + " is not ready, waiting for " + time * 50 + " milliseconds")
     }
     SparkEnv.get.shuffleManager.getReader(dep.shuffleHandle, split.index, split.index + 1, context)
       .read()

@@ -981,6 +981,9 @@ class DAGScheduler(
       if (stage.PENDING) {
         // partitionsToCompute.map {id => (id, getRandomLocs(stage.rdd, id))}.toMap
         getRandomLocs(stage.id, partitionsToCompute.toList)
+
+        // TODO frankfzw update the reduceStatuses in MapOutputTracker Master
+
       } else {
         try {
           stage match {
