@@ -8,7 +8,8 @@ val PENDING = false
 
 ## DAGScheduler
 ### submitStage: 
-    if (missing.isEmpty), this stage will become running. So we check every stage in waitingStages, if their parents are all running, we try to submit the stage and mark PENDING = true;
+    if (missing.isEmpty), this stage will become running. So we check every stage in waitingStages, 
+    if their parents are all running, we try to submit the stage and mark PENDING = true;
 ### submitMissingTasks: 
     if the stage is PENDING, we use getRandomLocs to assign the tasks to the random locations.
 ### getRandomLocs(new added): 
