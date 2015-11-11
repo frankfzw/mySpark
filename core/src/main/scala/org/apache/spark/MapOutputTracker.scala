@@ -256,7 +256,22 @@ private[spark] abstract class MapOutputTracker(conf: SparkConf) extends Logging 
   private def getReduceStatuses(shuffleId: Int): Array[ReduceStatus] = {
     val statuses = reduceStatuses.get(shuffleId).orNull
     if (statuses == null) {
-     // TODO frankfzw ask the MapOutputTrackerMaster to get the new data.
+      // TODO frankfzw ask the MapOutputTrackerMaster to get the new data.
+      val startTime = System.currentTimeMillis
+      logInfo("frankfzw: Don't have reduce location for shuffle " + shuffleId + ", fetching them; tracker endpoint = " + trackerEndpoint)
+      val fetchedBytes = askTracker[Array[Byte]](GetReduceStatus(shuffleId))
+      val fetchedStatuses = MapOutputTracker.deserializeReduceStatuses(fetchedBytes)
+      logInfo("frankfzw: Got the reduce locations")
+      reduceStatuses.put(shuffleId, fetchedStatuses)
+      logDebug(s"Fetching map output statuses for shuffle $shuffleId took " +
+        s"${System.currentTimeMillis - startTime} ms")
+      if (fetchedStatuses != null) {
+        return fetchedStatuses
+      } else {
+        logError("frankfzw: Missing all reduce locations for shuffle " + shuffleId)
+        throw new MetadataFetchFailedException(
+          shuffleId, -1, "Missing all reduce locations for shuffle " + shuffleId)
+      }
     } else {
       return statuses
     }
@@ -325,6 +340,12 @@ private[spark] class MapOutputTrackerMaster(conf: SparkConf)
    */
   protected val mapStatuses = new TimeStampedHashMap[Int, Array[MapStatus]]()
   private val cachedSerializedStatuses = new TimeStampedHashMap[Int, Array[Byte]]()
+
+  /**
+   * These two hashmap are used to store reduce statues for the pipe shuffle
+   */
+  protected  val reduceStatuses = new TimeStampedHashMap[Int, Array[ReduceStatus]]()
+  private val cachedReduceStatused = new TimeStampedHashMap[Int, Array[Byte]]()
 
   // For cleaning up TimeStampedHashMaps
   private val metadataCleaner =
@@ -501,14 +522,21 @@ private[spark] class MapOutputTrackerMaster(conf: SparkConf)
   override def stop() {
     sendTracker(StopMapOutputTracker)
     mapStatuses.clear()
+    // frankfzw clean up reduce statueses
+    reduceStatuses.clear()
     trackerEndpoint = null
     metadataCleaner.cancel()
+    cachedSerializedStatuses.clear()
     cachedSerializedStatuses.clear()
   }
 
   private def cleanup(cleanupTime: Long) {
     mapStatuses.clearOldValues(cleanupTime)
     cachedSerializedStatuses.clearOldValues(cleanupTime)
+
+    // frankfzw clean up the reduce statuses
+    reduceStatuses.clearOldValues(cleanupTime)
+    cachedReduceStatused.clearOldValues(cleanupTime)
   }
 }
 
@@ -547,6 +575,31 @@ private[spark] object MapOutputTracker extends Logging {
     val objIn = new ObjectInputStream(new GZIPInputStream(new ByteArrayInputStream(bytes)))
     Utils.tryWithSafeFinally {
       objIn.readObject().asInstanceOf[Array[MapStatus]]
+    } {
+      objIn.close()
+    }
+  }
+
+  // frankfzw: do the same thing as the serializeMapStatuses and the deserializeMapStatuses
+  def serializeReduceStatuses(statuses: Array[ReduceStatus]): Array[Byte] = {
+    val out = new ByteArrayOutputStream
+    val objOut = new ObjectOutputStream(new GZIPOutputStream(out))
+    Utils.tryWithSafeFinally {
+      // Since statuses can be modified in parallel, sync on it
+      statuses.synchronized {
+        objOut.writeObject(statuses)
+      }
+    } {
+      objOut.close()
+    }
+    out.toByteArray
+  }
+
+  // Opposite of serializeReduceStatuses.
+  def deserializeReduceStatuses(bytes: Array[Byte]): Array[ReduceStatus] = {
+    val objIn = new ObjectInputStream(new GZIPInputStream(new ByteArrayInputStream(bytes)))
+    Utils.tryWithSafeFinally {
+      objIn.readObject().asInstanceOf[Array[ReduceStatus]]
     } {
       objIn.close()
     }

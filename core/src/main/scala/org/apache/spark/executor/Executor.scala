@@ -194,6 +194,8 @@ private[spark] class Executor(
         task = ser.deserialize[Task[Any]](taskBytes, Thread.currentThread.getContextClassLoader)
         task.setTaskMemoryManager(taskMemoryManager)
 
+        // TODO frankfzw find out what kind of task it is and the shuffleId if necessary
+
         // If this task has been killed before we deserialized it, let's quit now. Otherwise,
         // continue executing the task.
         if (killed) {
@@ -255,6 +257,8 @@ private[spark] class Executor(
         val directResult = new DirectTaskResult(valueBytes, accumUpdates, task.metrics.orNull)
         val serializedDirectResult = ser.serialize(directResult)
         val resultSize = serializedDirectResult.limit
+
+        // TODO frankfzw send the serializeDirectResult to corresponding reducer
 
         // directSend = sending directly back to the driver
         val serializedResult: ByteBuffer = {
