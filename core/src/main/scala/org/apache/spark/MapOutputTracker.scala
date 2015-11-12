@@ -69,6 +69,22 @@ private[spark] class MapOutputTrackerMasterEndpoint(
 
     case GetReduceStatus(shuffleId: Int) =>
       // TODO frankfzw return the serialized Array of ReduceStatus
+      val hostPort = context.senderAddress.hostPort
+      logInfo("frankfzw: Asked to send reduce location for shuffle " + shuffleId + " to " + hostPort)
+      val reduceStatus = tracker.getSerializedReduceStatuses(shuffleId)
+      val serializedSize = reduceStatus.length
+      if (serializedSize > maxAkkaFrameSize) {
+        val msg = s"Map output statuses were $serializedSize bytes which " +
+          s"exceeds spark.akka.frameSize ($maxAkkaFrameSize bytes)."
+
+        /* For SPARK-1244 we'll opt for just logging an error and then sending it to the sender.
+         * A bigger refactoring (SPARK-1239) will ultimately remove this entire code path. */
+        val exception = new SparkException(msg)
+        logError(msg, exception)
+        context.sendFailure(exception)
+      } else {
+        context.reply(reduceStatus)
+      }
 
     case StopMapOutputTracker =>
       logInfo("MapOutputTrackerMasterEndpoint stopped!")
@@ -253,7 +269,7 @@ private[spark] abstract class MapOutputTracker(conf: SparkConf) extends Logging 
     }
   }
 
-  private def getReduceStatuses(shuffleId: Int): Array[ReduceStatus] = {
+  def getReduceStatuses(shuffleId: Int): Array[ReduceStatus] = {
     val statuses = reduceStatuses.get(shuffleId).orNull
     if (statuses == null) {
       // TODO frankfzw ask the MapOutputTrackerMaster to get the new data.
@@ -400,6 +416,31 @@ private[spark] class MapOutputTrackerMaster(conf: SparkConf)
   }
 
   /**
+   * added by frankfzw
+   * @param shuffleId
+   * @param statuses
+   */
+  def registerPendingReduce(shuffleId: Int, statuses: Array[ReduceStatus]): Unit = {
+    // TODO frankfzw finish it without handling fault
+    if (!mapStatuses.contains(shuffleId)) {
+      throw new IllegalArgumentException("Shuffle " + shuffleId + " is not registered yet")
+    }
+    if (reduceStatuses.contains(shuffleId)) {
+      logError("frankfzw: shuffleId " + shuffleId + " is registered again!!!")
+      reduceStatuses.update(shuffleId, statuses)
+    } else {
+      logInfo("frankfzw: register shuffle " + shuffleId + " with statuses " + statuses.length)
+      reduceStatuses.put(shuffleId, Array[ReduceStatus]() ++ statuses)
+    }
+
+  }
+
+  def unregisterPendingReduce(shuffleId: Int): Unit = {
+    reduceStatuses.remove(shuffleId)
+    cachedReduceStatused.remove(shuffleId)
+  }
+
+  /**
    * Return the preferred hosts on which to run the given map output partition in a given shuffle,
    * i.e. the nodes that the most outputs for that partition are on.
    *
@@ -519,6 +560,17 @@ private[spark] class MapOutputTrackerMaster(conf: SparkConf)
     bytes
   }
 
+  def getSerializedReduceStatuses(shuffleId: Int): Array[Byte] = {
+    var statuses: Array[ReduceStatus] = null
+    cachedReduceStatused.get(shuffleId) match {
+      case Some(bytes) =>
+        return bytes
+      case None =>
+        statuses = reduceStatuses.getOrElse(shuffleId, Array[ReduceStatus]())
+    }
+    val bytes = MapOutputTracker.serializeReduceStatuses(statuses)
+    bytes
+  }
   override def stop() {
     sendTracker(StopMapOutputTracker)
     mapStatuses.clear()
@@ -547,6 +599,8 @@ private[spark] class MapOutputTrackerMaster(conf: SparkConf)
 private[spark] class MapOutputTrackerWorker(conf: SparkConf) extends MapOutputTracker(conf) {
   protected val mapStatuses: Map[Int, Array[MapStatus]] =
     new ConcurrentHashMap[Int, Array[MapStatus]]().asScala
+  protected val reduceStatuses: Map[Int, Array[ReduceStatus]] =
+    new ConcurrentHashMap[Int, Array[ReduceStatus]]().asScala
 }
 
 private[spark] object MapOutputTracker extends Logging {

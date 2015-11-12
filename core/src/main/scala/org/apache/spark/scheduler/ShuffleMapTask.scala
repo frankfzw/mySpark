@@ -48,6 +48,23 @@ private[spark] class ShuffleMapTask(
   extends Task[MapStatus](stageId, stageAttemptId, partition.index, internalAccumulators)
   with Logging {
 
+  /**
+   * added by frankfzw
+   * It's more straightforward way to get the corresponding shuffleId without deserialize the task binary
+   */
+  private var shuffleId: Int = -1
+
+  def setShuffleId(sId: Int): Unit = {
+    shuffleId = sId
+  }
+
+  def getShuffleId(): Int = {
+    shuffleId
+  }
+
+  def getName(): String = {
+    this.getClass.getName
+  }
   /** A constructor used only in test suites. This does not require passing in an RDD. */
   def this(partitionId: Int) {
     this(0, 0, null, new Partition { override def index: Int = 0 }, null, null)
@@ -89,4 +106,11 @@ private[spark] class ShuffleMapTask(
   override def preferredLocations: Seq[TaskLocation] = preferredLocs
 
   override def toString: String = "ShuffleMapTask(%d, %d)".format(stageId, partitionId)
+}
+
+private[spark] object ShuffleMapTask {
+  def getName(): String = {
+    val name = this.getClass.getName
+    name.substring(0, name.length - 1)
+  }
 }

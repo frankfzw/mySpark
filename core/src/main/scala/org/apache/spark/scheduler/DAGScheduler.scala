@@ -28,6 +28,7 @@ import scala.concurrent.duration._
 import scala.language.existentials
 import scala.language.postfixOps
 import scala.util.control.NonFatal
+import scala.reflect.ClassTag
 
 import org.apache.commons.lang3.SerializationUtils
 
@@ -35,7 +36,7 @@ import org.apache.spark._
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.executor.TaskMetrics
 import org.apache.spark.partial.{ApproximateActionListener, ApproximateEvaluator, PartialResult}
-import org.apache.spark.rdd.RDD
+import org.apache.spark.rdd.{ShuffledRDD, RDD}
 import org.apache.spark.rpc.RpcTimeout
 import org.apache.spark.storage._
 import org.apache.spark.util._
@@ -827,6 +828,7 @@ class DAGScheduler(
     try {
       // New stage creation may throw an exception if, for example, jobs are run on a
       // HadoopRDD whose underlying HDFS files have been deleted.
+      // frankfzw: this creation will register the shuffle as well
       finalStage = newResultStage(finalRDD, func, partitions, jobId, callSite)
     } catch {
       case e: Exception =>
@@ -980,8 +982,20 @@ class DAGScheduler(
     val taskIdToLocations = {
       if (stage.PENDING) {
         // partitionsToCompute.map {id => (id, getRandomLocs(stage.rdd, id))}.toMap
-        getRandomLocs(stage.id, partitionsToCompute.toList)
+        logInfo(s"frankfzw: submit pendding stage: ${stage} ${stage.getClass} rdd is ${stage.rdd} dep is ${stage.rdd.dependencies}")
+        val (idToLoaction: Map[Int, Seq[TaskLocation]], reduceStatuses: Array[ReduceStatus]) = getRandomLocs(stage.id, partitionsToCompute.toList)
+        for (dep <- stage.rdd.dependencies) {
+          val shuffleId = dep match {
+            case shufDep: ShuffleDependency[_, _, _] =>
+              shufDep.shuffleId
+            case _ =>
+              logError("frankfzw: submit a pending stage without the shuffle dependency!!")
+              -1
+          }
+          mapOutputTracker.registerPendingReduce(shuffleId, reduceStatuses)
+        }
 
+        idToLoaction
         // TODO frankfzw update the reduceStatuses in MapOutputTracker Master
 
       } else {
@@ -1557,15 +1571,18 @@ class DAGScheduler(
    * @return the map of partion and TaskLocation
    */
   private[spark]
-  def getRandomLocs(stageId: Int, partitionToCompute: List[Int]): Map[Int, Seq[TaskLocation]] = {
+  def getRandomLocs(stageId: Int, partitionToCompute: List[Int]): (Map[Int, Seq[TaskLocation]], Array[ReduceStatus]) = {
     val res = new mutable.HashMap[Int, Seq[TaskLocation]]()
+    val reduceStatuses = ArrayBuffer.empty[ReduceStatus]
     val blockManagerList = blockManagerMaster.getBlockManagerList()
     for (p <- partitionToCompute) {
       val location = Seq[String](blockManagerList(p % blockManagerList.length).host)
       val taskLocation = location.map(TaskLocation(_))
       res.put(p, taskLocation)
+      val reduceStatus = new ReduceStatus(p, blockManagerList(p % blockManagerList.length))
+      reduceStatuses += reduceStatus
     }
-    return res
+    return (res, reduceStatuses.toArray)
   }
 
   /**

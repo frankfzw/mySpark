@@ -1,3 +1,5 @@
+# Early Scheduling of ResultStage
+
 ## Stage
     add
 ```scala 
@@ -49,3 +51,19 @@ Since the RDD of the early scheduling stage will always be a ShuffledRDD, we mod
     called by BlockStoreShuffleReader, call convertMapStatuses to get the BlockManagerId and the corresponding BlockId 
 ### covertMapStatuses: 
     if we get a null status which means the map is unfinished, we return a empty Seq
+
+
+# Change the data transmission from reducer-fetching to mapper-pushing
+
+## Register the reduce status
+
+Create a new data structure `ReduceStatus`, which contains the partitionId and BlockManagerId to store the statuses of reducers
+
+### DAGScheduler
+#### submitMissingTasks
+    if it's a PENDING stage, find it's dependency and call `MapOutputTracker.registerPendingReduce` to register the shuffleId with an Array of ReduceStatus
+
+### MapOutputTracker
+    Add some data structure to store the ReduceStatus and ShuffleId
+#### registerPendingReduce(new added)
+

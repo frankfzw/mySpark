@@ -22,9 +22,9 @@ import org.apache.spark.storage.BlockManagerId
 /**
  * Created by frankfzw on 15-11-9.
  */
-class ReduceStatus (rId: Int, bId: BlockManagerId) {
+class ReduceStatus (p: Int, bId: BlockManagerId) {
 
-  val reduceId = rId
+  val partition = p
   val blockManagerId = bId
 
 }

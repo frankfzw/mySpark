@@ -29,7 +29,7 @@ import scala.util.control.NonFatal
 
 import org.apache.spark._
 import org.apache.spark.deploy.SparkHadoopUtil
-import org.apache.spark.scheduler.{DirectTaskResult, IndirectTaskResult, Task}
+import org.apache.spark.scheduler.{ShuffleMapTask, DirectTaskResult, IndirectTaskResult, Task}
 import org.apache.spark.shuffle.FetchFailedException
 import org.apache.spark.storage.{StorageLevel, TaskResultBlockId}
 import org.apache.spark.unsafe.memory.TaskMemoryManager
@@ -195,6 +195,17 @@ private[spark] class Executor(
         task.setTaskMemoryManager(taskMemoryManager)
 
         // TODO frankfzw find out what kind of task it is and the shuffleId if necessary
+        // logInfo("frankfzw: task type " + task.getClass.getName + " target: " + ShuffleMapTask.getName() + " compare result: " + (task.getClass.getName == ShuffleMapTask.getName()))
+
+        if (task.getClass.getName == ShuffleMapTask.getName()) {
+          // check the shuffleId
+          // if it's not -1, find the reducer and do the data pushing
+          val shuffleId = task.asInstanceOf[ShuffleMapTask].getShuffleId()
+          if (shuffleId != -1) {
+            // TODO
+            logInfo("frankfzw: test the shuffle id")
+          }
+        }
 
         // If this task has been killed before we deserialized it, let's quit now. Otherwise,
         // continue executing the task.
