@@ -1071,8 +1071,11 @@ class DAGScheduler(
           partitionsToCompute.map { id =>
             val locs = taskIdToLocations(id)
             val part = stage.rdd.partitions(id)
-            new ShuffleMapTask(stage.id, stage.latestInfo.attemptId,
+            val s = new ShuffleMapTask(stage.id, stage.latestInfo.attemptId,
               taskBinary, part, locs, stage.internalAccumulators)
+            //frankfzw: add the shuffleId to the task
+            s.setShuffleId(stage.shuffleDep.shuffleId)
+            s
           }
 
         case stage: ResultStage =>

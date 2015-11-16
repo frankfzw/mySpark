@@ -203,7 +203,9 @@ private[spark] class Executor(
           val shuffleId = task.asInstanceOf[ShuffleMapTask].getShuffleId()
           if (shuffleId != -1) {
             // TODO
-            logInfo("frankfzw: test the shuffle id")
+            logInfo(s"frankfzw: task: ${task}; shuffleId: ${shuffleId}")
+            val reduceStatuses = env.mapOutputTracker.getReduceStatuses(shuffleId)
+            reduceStatuses.foreach(rs => logInfo(s"frankfzw: task: ${task}; shuffleId: ${shuffleId}; reduce status: ${rs}"))
           }
         }
 

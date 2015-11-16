@@ -361,7 +361,7 @@ private[spark] class MapOutputTrackerMaster(conf: SparkConf)
    * These two hashmap are used to store reduce statues for the pipe shuffle
    */
   protected  val reduceStatuses = new TimeStampedHashMap[Int, Array[ReduceStatus]]()
-  private val cachedReduceStatused = new TimeStampedHashMap[Int, Array[Byte]]()
+  private val cachedReduceStatuses = new TimeStampedHashMap[Int, Array[Byte]]()
 
   // For cleaning up TimeStampedHashMaps
   private val metadataCleaner =
@@ -437,7 +437,7 @@ private[spark] class MapOutputTrackerMaster(conf: SparkConf)
 
   def unregisterPendingReduce(shuffleId: Int): Unit = {
     reduceStatuses.remove(shuffleId)
-    cachedReduceStatused.remove(shuffleId)
+    cachedReduceStatuses.remove(shuffleId)
   }
 
   /**
@@ -562,7 +562,7 @@ private[spark] class MapOutputTrackerMaster(conf: SparkConf)
 
   def getSerializedReduceStatuses(shuffleId: Int): Array[Byte] = {
     var statuses: Array[ReduceStatus] = null
-    cachedReduceStatused.get(shuffleId) match {
+    cachedReduceStatuses.get(shuffleId) match {
       case Some(bytes) =>
         return bytes
       case None =>
@@ -588,7 +588,7 @@ private[spark] class MapOutputTrackerMaster(conf: SparkConf)
 
     // frankfzw clean up the reduce statuses
     reduceStatuses.clearOldValues(cleanupTime)
-    cachedReduceStatused.clearOldValues(cleanupTime)
+    cachedReduceStatuses.clearOldValues(cleanupTime)
   }
 }
 
