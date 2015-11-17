@@ -205,7 +205,7 @@ private[spark] class Executor(
             // TODO
             logInfo(s"frankfzw: task: ${task}; shuffleId: ${shuffleId}")
             val reduceStatuses = env.mapOutputTracker.getReduceStatuses(shuffleId)
-            reduceStatuses.foreach(rs => logInfo(s"frankfzw: task: ${task}; shuffleId: ${shuffleId}; reduce status: ${rs}"))
+            reduceStatuses.foreach(rs => logInfo(s"frankfzw: task: ${task}; shuffleId: ${shuffleId}; reduce status: ${rs} in ${rs.blockManagerId.host}"))
           }
         }
 

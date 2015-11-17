@@ -994,7 +994,7 @@ class DAGScheduler(
           }
           mapOutputTracker.registerPendingReduce(shuffleId, reduceStatuses)
         }
-
+        reduceStatuses.foreach(rs => logInfo(s"frankfzw: Random reducer in ${rs.blockManagerId.host}"))
         idToLoaction
         // TODO frankfzw update the reduceStatuses in MapOutputTracker Master
 
