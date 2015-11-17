@@ -25,11 +25,13 @@ Add a case which is `GetBlockMangerList`. It calls the function `getBlockManager
 Return the `blockMangerInfo.keySet` which is a collection of `BlockManagerId`
 
 
-These are for the early scheduling of stage and its tasks.
+## 
+    These are for the early scheduling of stage and its tasks.
 
-Now when we start the tasks, we have to make the executor waiting until the ShuffleStage finishes.
+    Now when we start the tasks, we have to make the executor waiting until the ShuffleStage finishes.
 
-Since the RDD of the early scheduling stage will always be a ShuffledRDD, we modified the ShuffledRDD to make it wait.
+    Since the RDD of the early scheduling stage will always be a ShuffledRDD, we modified the ShuffledRDD
+    to make it wait.
 
 ## ShuffledRDD
 ### compute: 
