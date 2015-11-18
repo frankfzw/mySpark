@@ -42,6 +42,15 @@ class BlockManagerMaster(
   }
 
   /**
+   * added by frankfzw
+   * Fetch the remote BlockManager by it's id
+   * @param blockManagerId
+   * @return
+   */
+  def getRemoteBlockManager(blockManagerId: BlockManagerId): Option[BlockManagerInfo] = {
+    driverEndpoint.askWithRetry[Option[BlockManagerInfo]](AskForRemoteBlockManager(blockManagerId))
+  }
+  /**
    * Get the all active BlockManagerId for random allocation
    * added by frankfzw
    * @return the list of BlockManagerId

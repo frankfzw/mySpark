@@ -19,12 +19,15 @@ package org.apache.spark.scheduler
 
 import java.nio.ByteBuffer
 
+import org.apache.spark.storage.{BlockManagerInfo, BlockManagerId}
+
 import scala.language.existentials
 
 import org.apache.spark._
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.shuffle.ShuffleWriter
+import scala.collection.mutable.HashMap
 
 /**
 * A ShuffleMapTask divides the elements of an RDD into multiple buckets (based on a partitioner
@@ -54,6 +57,14 @@ private[spark] class ShuffleMapTask(
    */
   private var shuffleId: Int = -1
 
+  /**
+   * added by frankfzw
+   * It's the flag of whether it should pipe Shuffle
+   */
+  private var pipeFlag: Boolean = false
+  // private var reduceStatuses: Array[ReduceStatus] = null
+  private var targetBlockManger: HashMap[Int, BlockManagerInfo] = null
+
   def setShuffleId(sId: Int): Unit = {
     shuffleId = sId
   }
@@ -65,6 +76,14 @@ private[spark] class ShuffleMapTask(
   def getName(): String = {
     this.getClass.getName
   }
+
+  def setPipeFlag(pIdToBlockManager: HashMap[Int, BlockManagerInfo]): Unit = {
+    pipeFlag = true
+    targetBlockManger = new HashMap[Int, BlockManagerInfo]()
+    targetBlockManger = pIdToBlockManager
+    // targetBlockManger.foreach(kv => logInfo(s"frankfzw: Target BlockManger ${kv._1} : ${kv._2.slaveEndpoint.address}"))
+  }
+
   /** A constructor used only in test suites. This does not require passing in an RDD. */
   def this(partitionId: Int) {
     this(0, 0, null, new Partition { override def index: Int = 0 }, null, null)
@@ -87,7 +106,15 @@ private[spark] class ShuffleMapTask(
     try {
       val manager = SparkEnv.get.shuffleManager
       writer = manager.getWriter[Any, Any](dep.shuffleHandle, partitionId, context)
-      writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])
+      // logInfo(s"frankfzw: wirter class is ${writer.getClass.getName}")
+      // writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])
+      // TODO frankfzw pipe the shuffle, write every partition on the remote memory
+      if (pipeFlag) {
+        targetBlockManger.foreach(kv => logInfo(s"frankfzw: Target BlockManger ${kv._1} : ${kv._2.slaveEndpoint.address}"))
+        writer.writeRemote(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]], targetBlockManger)
+      } else {
+        writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])
+      }
       writer.stop(success = true).get
     } catch {
       case e: Exception =>
@@ -106,6 +133,7 @@ private[spark] class ShuffleMapTask(
   override def preferredLocations: Seq[TaskLocation] = preferredLocs
 
   override def toString: String = "ShuffleMapTask(%d, %d)".format(stageId, partitionId)
+
 }
 
 private[spark] object ShuffleMapTask {

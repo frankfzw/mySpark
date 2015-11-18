@@ -22,7 +22,9 @@ import org.apache.spark.executor.ShuffleWriteMetrics
 import org.apache.spark.scheduler.MapStatus
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.shuffle._
-import org.apache.spark.storage.DiskBlockObjectWriter
+import org.apache.spark.storage.BlockManagerMessages.WriteRemote
+import org.apache.spark.storage.{BlockManagerInfo, DiskBlockObjectWriter}
+import scala.collection.mutable.HashMap
 
 private[spark] class HashShuffleWriter[K, V](
     shuffleBlockResolver: FileShuffleBlockResolver,
@@ -67,6 +69,42 @@ private[spark] class HashShuffleWriter[K, V](
     }
   }
 
+  /**
+   * added by frankfzw
+   * It's kind of ugly
+   * Write the key value pair to the memory of remote BlockManager
+   * @param records
+   * @param reduceIdToBlockManager
+   */
+  override def writeRemote(records: Iterator[Product2[K, V]], reduceIdToBlockManager: HashMap[Int, BlockManagerInfo]): Unit = {
+    val iter = if (dep.aggregator.isDefined) {
+      if (dep.mapSideCombine) {
+        dep.aggregator.get.combineValuesByKey(records, context)
+      } else {
+        records
+      }
+    } else {
+      require(!dep.mapSideCombine, "Map-side combine without Aggregator specified!")
+      records
+    }
+
+    for (elem <- iter) {
+      val bucketId = dep.partitioner.getPartition(elem._1)
+      shuffle.writers(bucketId).write(elem._1, elem._2)
+      val res = reduceIdToBlockManager.get(bucketId) match {
+        case Some(info) => info.slaveEndpoint.askWithRetry[Boolean](WriteRemote(elem._1, elem._2))
+        case None =>
+          logError(s"frankfzw: No such reducer id ${bucketId}")
+          throw new IllegalArgumentException(s"frankfzw: No such reducer id ${bucketId}")
+      }
+
+      if (res == false) {
+        logError(s"frankfzw: Remote write failed with ${bucketId}")
+        throw new SparkException(s"frankfzw: Remote write failed with ${bucketId}")
+      }
+    }
+  }
+
   /** Close this writer, passing along whether the map completed */
   override def stop(initiallySuccess: Boolean): Option[MapStatus] = {
     var success = initiallySuccess
@@ -80,6 +118,7 @@ private[spark] class HashShuffleWriter[K, V](
           Some(commitWritesAndBuildStatus())
         } catch {
           case e: Exception =>
+            logError(s"frankfzw: Something error happens")
             success = false
             revertWrites()
             throw e

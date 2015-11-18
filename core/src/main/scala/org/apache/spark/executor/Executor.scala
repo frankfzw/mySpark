@@ -31,7 +31,7 @@ import org.apache.spark._
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.scheduler.{ShuffleMapTask, DirectTaskResult, IndirectTaskResult, Task}
 import org.apache.spark.shuffle.FetchFailedException
-import org.apache.spark.storage.{StorageLevel, TaskResultBlockId}
+import org.apache.spark.storage.{BlockManagerInfo, StorageLevel, TaskResultBlockId}
 import org.apache.spark.unsafe.memory.TaskMemoryManager
 import org.apache.spark.util._
 
@@ -205,7 +205,17 @@ private[spark] class Executor(
             // TODO
             logInfo(s"frankfzw: task: ${task}; shuffleId: ${shuffleId}")
             val reduceStatuses = env.mapOutputTracker.getReduceStatuses(shuffleId)
-            reduceStatuses.foreach(rs => logInfo(s"frankfzw: task: ${task}; shuffleId: ${shuffleId}; reduce status: ${rs} in ${rs.blockManagerId.host}"))
+            // TODO what if reduceStatuses is null
+            if (reduceStatuses != null) {
+              val reduceIdToBlockManagerInfo:HashMap[Int, BlockManagerInfo] = HashMap[Int, BlockManagerInfo]()
+              reduceStatuses.foreach {
+                rs =>
+                  val blockManagerInfo = env.blockManager.getRemoteBlockManger(rs.blockManagerId)
+                  logInfo(s"frankfzw: The remote BlockManger of ${rs.partition} is ${blockManagerInfo.slaveEndpoint.address}")
+                  reduceIdToBlockManagerInfo += (rs.partition -> blockManagerInfo)
+              }
+              task.asInstanceOf[ShuffleMapTask].setPipeFlag(reduceIdToBlockManagerInfo)
+            }
           }
         }
 

@@ -70,6 +70,9 @@ class BlockManagerSlaveEndpoint(
 
     case GetMatchingBlockIds(filter, _) =>
       context.reply(blockManager.getMatchingBlockIds(filter))
+
+    case WriteRemote(key, value) =>
+      context.reply(blockManager.remoteWrite(key, value))
   }
 
   private def doAsync[T](actionMessage: String, context: RpcCallContext)(body: => T) {

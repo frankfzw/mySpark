@@ -284,9 +284,10 @@ private[spark] abstract class MapOutputTracker(conf: SparkConf) extends Logging 
       if (fetchedStatuses != null) {
         return fetchedStatuses
       } else {
-        logError("frankfzw: Missing all reduce locations for shuffle " + shuffleId)
-        throw new MetadataFetchFailedException(
-          shuffleId, -1, "Missing all reduce locations for shuffle " + shuffleId)
+        logInfo(s"frankfzw: Missing all reduce locations for shuffle ${shuffleId}. Is it because there is no pending stage?")
+        // throw new MetadataFetchFailedException(
+        //   shuffleId, -1, "Missing all reduce locations for shuffle " + shuffleId)
+        null
       }
     } else {
       return statuses
@@ -685,7 +686,7 @@ private[spark] object MapOutputTracker extends Logging {
     for ((status, mapId) <- statuses.zipWithIndex) {
       breakable {
       if (status == null) {
-        val errorMessage = s"Missing an output location for shuffle $shuffleId"
+        val errorMessage = s"Missing an output location for shuffle $shuffleId, partition from ${startPartition} to ${endPartition}"
         logError(errorMessage)
         // frankfzw: skip the throw here, just return a empty one
         // throw new MetadataFetchFailedException(shuffleId, startPartition, errorMessage)

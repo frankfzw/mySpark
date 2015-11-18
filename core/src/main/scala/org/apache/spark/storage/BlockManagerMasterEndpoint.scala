@@ -128,6 +128,10 @@ class BlockManagerMasterEndpoint(
           }
         case None => context.reply(false)
       }
+
+      //added by frankfzw to fetch the remote blockManager
+    case AskForRemoteBlockManager(blockManagerId) =>
+      context.reply(getRemoteBlockManager(blockManagerId))
   }
 
   /**
@@ -138,6 +142,17 @@ class BlockManagerMasterEndpoint(
   private def getBolckManagerList(): Seq[BlockManagerId] = {
     blockManagerInfo.keySet.toSeq
   }
+
+  /**
+   * added by frankfzw
+   * Called by Executor to fetch the remote BlockManager
+   * @param blockMangerId
+   * @return Option[BlockManagerInfo]
+   */
+  private def getRemoteBlockManager(blockMangerId: BlockManagerId): Option[BlockManagerInfo] = {
+    blockManagerInfo.get(blockMangerId)
+  }
+
   private def removeRdd(rddId: Int): Future[Seq[Int]] = {
     // First remove the metadata for the given RDD, and then asynchronously remove the blocks
     // from the slaves.

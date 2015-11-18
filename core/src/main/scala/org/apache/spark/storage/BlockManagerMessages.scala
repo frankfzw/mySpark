@@ -111,4 +111,9 @@ private[spark] object BlockManagerMessages {
   case class HasCachedBlocks(executorId: String) extends ToBlockManagerMaster
 
   case object GetBlockManagerList extends ToBlockManagerMaster
+
+  // added by frankfzw. Fetch the remote blockMangerSlaveEndPoint
+  case class AskForRemoteBlockManager(blockManagerId: BlockManagerId) extends ToBlockManagerMaster
+
+  case class WriteRemote(key: Any, value: Any) extends ToBlockManagerSlave
 }

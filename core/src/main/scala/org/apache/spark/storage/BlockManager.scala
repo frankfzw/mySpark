@@ -166,6 +166,34 @@ private[spark] class BlockManager(
   private lazy val compressionCodec: CompressionCodec = CompressionCodec.createCodec(conf)
 
   /**
+   * added by frankfzw
+   * @param blockMangerId
+   * @return The corresponding BlockInfo of blockManagerId
+   */
+  def getRemoteBlockManger(blockMangerId: BlockManagerId): BlockManagerInfo = {
+    val blockInfo:BlockManagerInfo = {
+      master.getRemoteBlockManager(blockManagerId) match {
+        case Some(info) => info
+        case None =>
+          logError(s"frankfzw: The BlockManager with ID ${blockManagerId} doesn't exist!")
+          throw new IllegalArgumentException(s"frankfzw: The BlockManager with ID ${blockManagerId} doesn't exist!")
+      }
+    }
+    blockInfo
+  }
+
+  /**
+   * added by frankfzw
+   * It's called by remote Task to write the key value into the memory
+   * @param key
+   * @param value
+   * @return
+   */
+  def remoteWrite(key: Any, value: Any): Boolean = {
+    logInfo(s"frankfzw: Receive the remote pushing data ${key} -> ${value}")
+    true
+  }
+  /**
    * Initializes the BlockManager with the given appId. This is not performed in the constructor as
    * the appId may not be known at BlockManager instantiation time (in particular for the driver,
    * where it is only learned after registration with the TaskScheduler).

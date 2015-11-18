@@ -54,6 +54,8 @@ import org.apache.spark.shuffle.ShuffleWriter;
 import org.apache.spark.storage.BlockManager;
 import org.apache.spark.storage.TimeTrackingOutputStream;
 import org.apache.spark.unsafe.Platform;
+import org.apache.spark.storage.BlockManagerInfo;
+import scala.collection.mutable.HashMap;
 import org.apache.spark.unsafe.memory.TaskMemoryManager;
 
 @Private
@@ -70,6 +72,12 @@ public class UnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {
   private final IndexShuffleBlockResolver shuffleBlockResolver;
   private final TaskMemoryManager memoryManager;
   private final ShuffleMemoryManager shuffleMemoryManager;
+
+  @Override
+  public void writeRemote(scala.collection.Iterator<Product2<K, V>> records, HashMap<Object, BlockManagerInfo> reduceIdToBlockManager) {
+
+  }
+
   private final SerializerInstance serializer;
   private final Partitioner partitioner;
   private final ShuffleWriteMetrics writeMetrics;
@@ -192,6 +200,7 @@ public class UnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {
       }
     }
   }
+
 
   private void open() throws IOException {
     assert (sorter == null);
