@@ -143,9 +143,8 @@ final class BypassMergeSortShuffleWriter<K, V> implements SortShuffleFileWriter<
         partitionWriters[partitioner.getPartition(key)].write(key, record._2());
 
         int pid = partitioner.getPartition(key);
-        if (reduceIdToBlockManager.containsKey(pid)) {
-          BlockManager.writeRemote(reduceIdToBlockManager.get(pid).slaveEndpoint(), key, record._2());
-        }
+        // frankfzw: It may cause an null exception
+        BlockManager.writeRemote(reduceIdToBlockManager.get(pid).slaveEndpoint(), key, record._2());
       }
     } else {
       while (records.hasNext()) {
