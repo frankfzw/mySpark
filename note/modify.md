@@ -63,7 +63,12 @@ Create a new data structure `ReduceStatus`, which contains the `partitionId` and
 if it's a PENDING stage, find it's dependency and call `MapOutputTracker.registerPendingReduce` to register the shuffleId with an Array of `ReduceStatus`
 
 ### ShuffleMapTask
-Add an parameter named `shuffleId` to record if this task has an shuffle to complete
+Add a parameter named `shuffleId` to record if this task has an shuffle to complete. Add the corresponding set and get functions as well.
+Add a parameter named `pipeFlag` to define whether the results should be pushed to the remote BlockManager
+Add a parameter named `targetBlockManager: HashMap[Int, BlockManagerInfo]` to store the reduceId and corresponding BlockManagerInfo which contains a remote `BlockManagerSlaveEndPoint rpcRef`. The data struct could be Seq or Array to save memory?
+Add a function named `getName()` in object of ShuffleMapTask to get the class name of the ShuffleMapTask
+Add a function named `setPipeFlag(pidToBlockManager: HashMap[Int, BlockManagerInfo])` to set the pipeFlag and targetBlockManager
+
 
 ### MapOutputTracker
 Add a HashMap `reduceStatuses` to store the `ReduceStatus` and `ShuffleId`, a HashMap `cachedReduceStatuses` to store the serialized `reduceStatuses`
@@ -80,6 +85,74 @@ Do the opposite thing of `serializeReduceStatuses`
 #### getReduceStatuses(shuffleId: Int) (new added)
 It's called by `Exector` to fetch the corresponding `ReduceStatuses`
 
+## Perform data pushing
+
+### BlockManager
+#### getRemoteBlockManager(new added)
+It's called by `Exectutor` to fetch the remote rpcRef of `BlockManagerSlaveEndpoint`
+
+It ask the `BlockManagerMaster` to fetch the rpcRef
+
+#### writeRemote(new added)
+Send the key-value pair via rpcRef to the remote `BlockManager`
+
+### BlockManagerMaster
+#### getRemoteBlockManager(new added)
+It's called by `BlockManager.getRemoteBlockManager`.
+It calls the `BlockManagerMasterEndpoint` to fetch the `BlockManagerInfo`
+
+### BlockManagerMessages
+#### AskForRemoteBlockManager(new added)
+It's a rpc message to get the remote `BlockManagerInfo` by transmit the `BlockManagerId` to the `BlockManagerMasterEndpoint`
+
+#### WriteRemote(new added)
+It's a rpc message to write the key-value pair to the remote `BlockManager`
+
+### BlockManagerMasterEndpoint
+#### receiveAndReply
+Add a new case which is `AskForRemoteBlockManager`. It replies by calling `getRemoteBlockManager`
+
+#### getRemoteBlockManager(new added)
+Returns the corresponding `BlockManagerInfo`
+
+
 ### Exector
+#### run
 It checks the shuffleId of the task. Ask the `MapOutputTrackerMaster` to fetch the array of `ReduceStatuses`
+
+If the return value of `reduceStatuses` is not null, which means there are some tasks waiting for this one, it calls the `setPipeFlag` to make the task push data.
+
+### ShuffleMapTask
+#### runTask
+If the `pipeFlag` is true, perform `writeRemote` instead of write.
+
+The `writer` here could be `SortShuffleWriter`, `HashShuffleWriter` or `UnsafeShuffleWriter`. These three writer all extend the `ShuffleWriter`. We skip the `UnsafeShuffleWriter` at first.
+
+### ShuffleWriter
+Add an interface named `writeRemote`
+
+### HashShuffleWriter
+#### writeRemote
+It performs like the original `write` except it calls the `BlockManager.writeRemote` to send the data to remote reducer one by one.
+
+### SortShuffleWriter
+#### writeRemote
+It performs like the original `write` except it call the `setReduceStatus` to offload the data pushing to the sorter
+
+The sorter could be `ExternalSorter` or `BypassMergeSortShuffleWriter`. They both extends the `SortShuffleFileWriter` which is a Java interface
+
+### SortShuffleFileWriter
+Add a method named `setReduceStatus` to set the map with `reduceId` and `BlockManagerInfo`
+
+### ExternalSorter
+#### insertAll()
+If the `reduceIdToBlockManager` is not null, perform the data pushing without combining or merging
+
+### BypassMergeSortShuffleWriter
+#### insertAll()
+If the `reduceIdToBlockManager` is not null, perform the data pushing one by one
+
+
+
+
 
