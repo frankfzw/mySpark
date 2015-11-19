@@ -132,9 +132,9 @@ final class BypassMergeSortShuffleWriter<K, V> implements SortShuffleFileWriter<
     // included in the shuffle write time.
     writeMetrics.incShuffleWriteTime(System.nanoTime() - openStartTime);
 
-    for (Map.Entry<Integer, BlockManagerInfo> entry : reduceIdToBlockManager.entrySet()) {
-      logger.info("frankfzw: Reduce status rid: " + entry.getKey() + "value: " + entry.getValue().slaveEndpoint().address());
-    }
+    // for (Map.Entry<Integer, BlockManagerInfo> entry : reduceIdToBlockManager.entrySet()) {
+    //   logger.info("frankfzw: Reduce status rid: " + entry.getKey() + "value: " + entry.getValue().slaveEndpoint().address());
+    // }
     while (records.hasNext()) {
       final Product2<K, V> record = records.next();
       final K key = record._1();

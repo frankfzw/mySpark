@@ -110,7 +110,7 @@ private[spark] class ShuffleMapTask(
       // writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])
       // TODO frankfzw pipe the shuffle, write every partition on the remote memory
       if (pipeFlag) {
-        targetBlockManger.foreach(kv => logInfo(s"frankfzw: Target BlockManger ${kv._1} : ${kv._2.slaveEndpoint.address}"))
+        // targetBlockManger.foreach(kv => logInfo(s"frankfzw: Target BlockManger ${kv._1} : ${kv._2.slaveEndpoint.address}"))
         writer.writeRemote(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]], targetBlockManger)
       } else {
         writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])

@@ -114,8 +114,6 @@ private[spark] class SortShuffleWriter[K, V, C](
     val javaHashMap = new java.util.HashMap[Integer, BlockManagerInfo]()
     reduceIdToBlockManager.foreach(kv => javaHashMap.put(Int.box(kv._1), kv._2))
     sorter.setReduceStatus(javaHashMap)
-    logInfo(s"frankfzw: Size to write is ${records.size}")
-    // logInfo(s"frankfzw: Sorter is ${sorter.getClass.getName}, reducesStatus: ${javaHashMap.size()}")
     sorter.insertAll(records)
 
     // Don't bother including the time to open the merged output file in the shuffle write time,
@@ -127,6 +125,7 @@ private[spark] class SortShuffleWriter[K, V, C](
     shuffleBlockResolver.writeIndexFile(dep.shuffleId, mapId, partitionLengths)
 
     mapStatus = MapStatus(blockManager.shuffleServerId, partitionLengths)
+
 
   }
 
