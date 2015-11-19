@@ -135,20 +135,26 @@ final class BypassMergeSortShuffleWriter<K, V> implements SortShuffleFileWriter<
     // for (Map.Entry<Integer, BlockManagerInfo> entry : reduceIdToBlockManager.entrySet()) {
     //   logger.info("frankfzw: Reduce status rid: " + entry.getKey() + "value: " + entry.getValue().slaveEndpoint().address());
     // }
-    while (records.hasNext()) {
-      final Product2<K, V> record = records.next();
-      final K key = record._1();
-      partitionWriters[partitioner.getPartition(key)].write(key, record._2());
+    if (reduceIdToBlockManager != null) {
+      // added by frankfzw, perfrom data pushing
+      while (records.hasNext()) {
+        final Product2<K, V> record = records.next();
+        final K key = record._1();
+        partitionWriters[partitioner.getPartition(key)].write(key, record._2());
 
-      logger.info("frankfzw: Write records: " + partitioner.getPartition(key) + "key: " + key + "value: " + record._2());
-      if (reduceIdToBlockManager != null) {
         int pid = partitioner.getPartition(key);
         if (reduceIdToBlockManager.containsKey(pid)) {
-          logger.info("frankfzw: Write to remote " + pid + "key: " + key + "value: " + record._2());
           BlockManager.writeRemote(reduceIdToBlockManager.get(pid).slaveEndpoint(), key, record._2());
         }
       }
+    } else {
+      while (records.hasNext()) {
+        final Product2<K, V> record = records.next();
+        final K key = record._1();
+        partitionWriters[partitioner.getPartition(key)].write(key, record._2());
+      }
     }
+
 
     for (DiskBlockObjectWriter writer : partitionWriters) {
       writer.commitAndClose();

@@ -210,19 +210,48 @@ private[spark] class ExternalSorter[K, V, C](
       val update = (hadValue: Boolean, oldValue: C) => {
         if (hadValue) mergeValue(oldValue, kv._2) else createCombiner(kv._2)
       }
-      while (records.hasNext) {
-        addElementsRead()
-        kv = records.next()
-        map.changeValue((getPartition(kv._1), kv._1), update)
-        maybeSpillCollection(usingMap = true)
+      if (reduceIdToBlockManager != null) {
+        // added by frankfzw, we don't perform merge here
+        // just send the record one by one
+        while (records.hasNext) {
+          addElementsRead()
+          kv = records.next()
+          val pid = getPartition(kv._1)
+          BlockManager.writeRemote(reduceIdToBlockManager.get(pid).slaveEndpoint, kv._1, kv._2)
+          map.changeValue((getPartition(kv._1), kv._1), update)
+          maybeSpillCollection(usingMap = true)
+        }
+      } else {
+        while (records.hasNext) {
+          addElementsRead()
+          kv = records.next()
+          map.changeValue((getPartition(kv._1), kv._1), update)
+          maybeSpillCollection(usingMap = true)
+        }
       }
+
     } else {
       // Stick values into our buffer
-      while (records.hasNext) {
-        addElementsRead()
-        val kv = records.next()
-        buffer.insert(getPartition(kv._1), kv._1, kv._2.asInstanceOf[C])
-        maybeSpillCollection(usingMap = false)
+      if (reduceIdToBlockManager != null) {
+        // added by frankfzw, we don't perform merge here
+        // just send the record one by one
+        while (records.hasNext) {
+          addElementsRead()
+          val kv = records.next()
+          val pid = getPartition(kv._1)
+          BlockManager.writeRemote(reduceIdToBlockManager.get(pid).slaveEndpoint, kv._1, kv._2)
+          buffer.insert(getPartition(kv._1), kv._1, kv._2.asInstanceOf[C])
+          maybeSpillCollection(usingMap = false)
+        }
+      } else {
+        while (records.hasNext) {
+          addElementsRead()
+          val kv = records.next()
+          val pid = getPartition(kv._1)
+          BlockManager.writeRemote(reduceIdToBlockManager.get(pid).slaveEndpoint, kv._1, kv._2)
+          buffer.insert(getPartition(kv._1), kv._1, kv._2.asInstanceOf[C])
+          maybeSpillCollection(usingMap = false)
+        }
       }
     }
   }
@@ -696,18 +725,6 @@ private[spark] class ExternalSorter[K, V, C](
             context.taskMetrics.shuffleWriteMetrics.get)
           for (elem <- elements) {
             writer.write(elem._1, elem._2)
-
-            // added by frankfzw
-            if (reduceIdToBlockManager != null) {
-              if (reduceIdToBlockManager.containsKey(id)) {
-                val info = reduceIdToBlockManager.get(id)
-                BlockManager.writeRemote(info.slaveEndpoint, elem._1, elem._2)
-
-              } else {
-                logError(s"frankfzw: No such reducer id ${id}")
-                throw new IllegalArgumentException(s"frankfzw: No such reducer id ${id}")
-              }
-            }
           }
           writer.commitAndClose()
           val segment = writer.fileSegment()
