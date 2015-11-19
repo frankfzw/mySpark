@@ -19,13 +19,16 @@ package org.apache.spark.shuffle.sort;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.HashMap;
 
+import org.apache.spark.storage.BlockManagerInfo;
 import scala.Product2;
 import scala.collection.Iterator;
 
 import org.apache.spark.annotation.Private;
 import org.apache.spark.TaskContext;
 import org.apache.spark.storage.BlockId;
+
 
 /**
  * Interface for objects that {@link SortShuffleWriter} uses to write its output files.
@@ -50,4 +53,10 @@ public interface SortShuffleFileWriter<K, V> {
       File outputFile) throws IOException;
 
   void stop() throws IOException;
+
+  /**
+   * added by frankfzw
+   * Called by SortShuffleWriter to add reduceIdToBlockManager
+   */
+  void setReduceStatus(HashMap<Integer, BlockManagerInfo> reduceIdToBlockManager);
 }

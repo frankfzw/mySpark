@@ -23,7 +23,7 @@ import org.apache.spark.scheduler.MapStatus
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.shuffle._
 import org.apache.spark.storage.BlockManagerMessages.WriteRemote
-import org.apache.spark.storage.{BlockManagerInfo, DiskBlockObjectWriter}
+import org.apache.spark.storage.{BlockManager, BlockManagerInfo, DiskBlockObjectWriter}
 import scala.collection.mutable.HashMap
 
 private[spark] class HashShuffleWriter[K, V](
@@ -92,7 +92,7 @@ private[spark] class HashShuffleWriter[K, V](
       val bucketId = dep.partitioner.getPartition(elem._1)
       shuffle.writers(bucketId).write(elem._1, elem._2)
       val res = reduceIdToBlockManager.get(bucketId) match {
-        case Some(info) => info.slaveEndpoint.askWithRetry[Boolean](WriteRemote(elem._1, elem._2))
+        case Some(info) => BlockManager.writeRemote(info.slaveEndpoint, elem._1, elem._2)
         case None =>
           logError(s"frankfzw: No such reducer id ${bucketId}")
           throw new IllegalArgumentException(s"frankfzw: No such reducer id ${bucketId}")

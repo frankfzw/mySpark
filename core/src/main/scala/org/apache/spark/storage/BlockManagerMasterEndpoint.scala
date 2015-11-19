@@ -429,6 +429,7 @@ class BlockManagerMasterEndpoint(
   override def onStop(): Unit = {
     askThreadPool.shutdownNow()
   }
+
 }
 
 @DeveloperApi

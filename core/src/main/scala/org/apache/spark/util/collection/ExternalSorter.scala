@@ -20,6 +20,8 @@ package org.apache.spark.util.collection
 import java.io._
 import java.util.Comparator
 
+import org.apache.spark.storage.BlockManagerMessages.WriteRemote
+
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.mutable
 
@@ -30,7 +32,7 @@ import org.apache.spark._
 import org.apache.spark.serializer._
 import org.apache.spark.executor.ShuffleWriteMetrics
 import org.apache.spark.shuffle.sort.{SortShuffleFileWriter, SortShuffleWriter}
-import org.apache.spark.storage.{BlockId, DiskBlockObjectWriter}
+import org.apache.spark.storage.{BlockManager, BlockManagerInfo, BlockId, DiskBlockObjectWriter}
 
 /**
  * Sorts and potentially merges a number of key-value pairs of type (K, V) to produce key-combiner
@@ -116,6 +118,9 @@ private[spark] class ExternalSorter[K, V, C](
   private val ser = Serializer.getSerializer(serializer)
   private val serInstance = ser.newInstance()
 
+  // added by frankfzw
+  private var reduceIdToBlockManager: java.util.HashMap[Integer, BlockManagerInfo] = null
+
   // Use getSizeAsKb (not bytes) to maintain backwards compatibility if no units are provided
   private val fileBufferSize = conf.getSizeAsKb("spark.shuffle.file.buffer", "32k").toInt * 1024
 
@@ -191,6 +196,7 @@ private[spark] class ExternalSorter[K, V, C](
    * Exposed for testing.
    */
   private[spark] def numSpills: Int = spills.size
+
 
   override def insertAll(records: Iterator[Product2[K, V]]): Unit = {
     // TODO: stop combining if we find that the reduction factor isn't high
@@ -690,6 +696,18 @@ private[spark] class ExternalSorter[K, V, C](
             context.taskMetrics.shuffleWriteMetrics.get)
           for (elem <- elements) {
             writer.write(elem._1, elem._2)
+
+            // added by frankfzw
+            if (reduceIdToBlockManager != null) {
+              if (reduceIdToBlockManager.containsKey(id)) {
+                val info = reduceIdToBlockManager.get(id)
+                BlockManager.writeRemote(info.slaveEndpoint, elem._1, elem._2)
+
+              } else {
+                logError(s"frankfzw: No such reducer id ${id}")
+                throw new IllegalArgumentException(s"frankfzw: No such reducer id ${id}")
+              }
+            }
           }
           writer.commitAndClose()
           val segment = writer.fileSegment()
@@ -741,5 +759,10 @@ private[spark] class ExternalSorter[K, V, C](
       val elem = data.next()
       (elem._1._2, elem._2)
     }
+  }
+
+  override def setReduceStatus(ridToInfo: java.util.HashMap[Integer, BlockManagerInfo]): Unit = {
+    reduceIdToBlockManager = new java.util.HashMap[Integer, BlockManagerInfo]()
+    reduceIdToBlockManager = ridToInfo
   }
 }

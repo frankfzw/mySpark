@@ -21,6 +21,9 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.lang.Integer;
+import java.util.HashMap;
+import java.util.Map;
 
 import scala.Product2;
 import scala.Tuple2;
@@ -38,6 +41,8 @@ import org.apache.spark.serializer.Serializer;
 import org.apache.spark.serializer.SerializerInstance;
 import org.apache.spark.storage.*;
 import org.apache.spark.util.Utils;
+import org.apache.spark.storage.BlockManagerMessages.WriteRemote;
+import scala.tools.cmd.gen.AnyVals;
 
 /**
  * This class implements sort-based shuffle's hash-style shuffle fallback path. This write path
@@ -69,6 +74,16 @@ final class BypassMergeSortShuffleWriter<K, V> implements SortShuffleFileWriter<
   private final int fileBufferSize;
   private final boolean transferToEnabled;
   private final int numPartitions;
+
+  // added by frankfzw
+  private HashMap<Integer, BlockManagerInfo> reduceIdToBlockManager = null;
+
+  @Override
+  public void setReduceStatus(HashMap<Integer, BlockManagerInfo> rIdToInfo) {
+    reduceIdToBlockManager = new HashMap<>();
+    reduceIdToBlockManager = rIdToInfo;
+  }
+
   private final BlockManager blockManager;
   private final Partitioner partitioner;
   private final ShuffleWriteMetrics writeMetrics;
@@ -95,8 +110,10 @@ final class BypassMergeSortShuffleWriter<K, V> implements SortShuffleFileWriter<
 
   @Override
   public void insertAll(Iterator<Product2<K, V>> records) throws IOException {
+    // logger.info("frankfzw: I'm insertAll with records " + records.size());
     assert (partitionWriters == null);
     if (!records.hasNext()) {
+      logger.info("frankfzw: The records are empty");
       return;
     }
     final SerializerInstance serInstance = serializer.newInstance();
@@ -115,16 +132,29 @@ final class BypassMergeSortShuffleWriter<K, V> implements SortShuffleFileWriter<
     // included in the shuffle write time.
     writeMetrics.incShuffleWriteTime(System.nanoTime() - openStartTime);
 
+    for (Map.Entry<Integer, BlockManagerInfo> entry : reduceIdToBlockManager.entrySet()) {
+      logger.info("frankfzw: Reduce status rid: " + entry.getKey() + "value: " + entry.getValue().slaveEndpoint().address());
+    }
     while (records.hasNext()) {
       final Product2<K, V> record = records.next();
       final K key = record._1();
       partitionWriters[partitioner.getPartition(key)].write(key, record._2());
+
+      logger.info("frankfzw: Write records: " + partitioner.getPartition(key) + "key: " + key + "value: " + record._2());
+      if (reduceIdToBlockManager != null) {
+        int pid = partitioner.getPartition(key);
+        if (reduceIdToBlockManager.containsKey(pid)) {
+          logger.info("frankfzw: Write to remote " + pid + "key: " + key + "value: " + record._2());
+          BlockManager.writeRemote(reduceIdToBlockManager.get(pid).slaveEndpoint(), key, record._2());
+        }
+      }
     }
 
     for (DiskBlockObjectWriter writer : partitionWriters) {
       writer.commitAndClose();
     }
   }
+
 
   @Override
   public long[] writePartitionedFile(

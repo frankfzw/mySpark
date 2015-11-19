@@ -25,6 +25,7 @@ import org.apache.spark.shuffle.{IndexShuffleBlockResolver, ShuffleWriter, BaseS
 import org.apache.spark.storage.BlockManagerMessages.WriteRemote
 import org.apache.spark.storage.{BlockManagerInfo, ShuffleBlockId}
 import org.apache.spark.util.collection.ExternalSorter
+import scala.collection.mutable
 import scala.collection.mutable.HashMap
 
 private[spark] class SortShuffleWriter[K, V, C](
@@ -87,7 +88,6 @@ private[spark] class SortShuffleWriter[K, V, C](
   }
 
   override def writeRemote(records: Iterator[Product2[K, V]], reduceIdToBlockManager: HashMap[Int, BlockManagerInfo]): Unit = {
-    logInfo(s"frankfzw: Size to write is ${records.size}")
     sorter = if (dep.mapSideCombine) {
       require(dep.aggregator.isDefined, "Map-side combine without Aggregator specified!")
       new ExternalSorter[K, V, C](
@@ -108,6 +108,14 @@ private[spark] class SortShuffleWriter[K, V, C](
       new ExternalSorter[K, V, V](
         aggregator = None, Some(dep.partitioner), ordering = None, dep.serializer)
     }
+    // added by frankfzw
+    // send the reduceIdToBlockManger to sorter
+    // convert to a java HashMap<Integer, BlockInfo> at first
+    val javaHashMap = new java.util.HashMap[Integer, BlockManagerInfo]()
+    reduceIdToBlockManager.foreach(kv => javaHashMap.put(Int.box(kv._1), kv._2))
+    sorter.setReduceStatus(javaHashMap)
+    logInfo(s"frankfzw: Size to write is ${records.size}")
+    // logInfo(s"frankfzw: Sorter is ${sorter.getClass.getName}, reducesStatus: ${javaHashMap.size()}")
     sorter.insertAll(records)
 
     // Don't bother including the time to open the merged output file in the shuffle write time,
@@ -119,25 +127,7 @@ private[spark] class SortShuffleWriter[K, V, C](
     shuffleBlockResolver.writeIndexFile(dep.shuffleId, mapId, partitionLengths)
 
     mapStatus = MapStatus(blockManager.shuffleServerId, partitionLengths)
-    // TODO: frankfzw: Send all data to the remote after saving on the disk
-    records.foreach {
-      iter =>
-        logInfo(s"frankfzw: Recorder ${iter._1} -> ${iter._2}")
-        val partitionId = dep.partitioner.getPartition(iter._1)
-        val res = reduceIdToBlockManager.get(partitionId) match {
-          case Some(info) =>
-            logInfo(s"frankfzw: The target reducer is ${info.blockManagerId} : ${info.slaveEndpoint.getClass.getName}")
-            info.slaveEndpoint.askWithRetry[Boolean](WriteRemote(iter._1, iter._2))
-          case None =>
-            logError(s"frankfzw: No such reducer id ${partitionId}")
-            throw new IllegalArgumentException(s"frankfzw: No such reducer id ${partitionId}")
-        }
 
-        if (res == false) {
-          logError(s"frankfzw: Remote write failed with ${partitionId}")
-          throw new SparkException(s"frankfzw: Remote write failed with ${partitionId}")
-        }
-    }
   }
 
   /** Close this writer, passing along whether the map completed */
