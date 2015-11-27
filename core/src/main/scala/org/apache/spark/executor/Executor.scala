@@ -187,6 +187,7 @@ private[spark] class Executor(
       execBackend.statusUpdate(taskId, TaskState.RUNNING, EMPTY_BYTE_BUFFER)
       var taskStart: Long = 0
       startGCTime = computeTotalGcTime()
+      var reduceIdToBlockManagerInfo:HashMap[Int, BlockManagerInfo] = null
 
       try {
         val (taskFiles, taskJars, taskBytes) = Task.deserializeWithDependencies(serializedTask)
@@ -207,11 +208,11 @@ private[spark] class Executor(
             val reduceStatuses = env.mapOutputTracker.getReduceStatuses(shuffleId)
             // TODO what if reduceStatuses is null
             if (reduceStatuses != null) {
-              val reduceIdToBlockManagerInfo:HashMap[Int, BlockManagerInfo] = HashMap[Int, BlockManagerInfo]()
+              reduceIdToBlockManagerInfo = new HashMap[Int, BlockManagerInfo]()
               reduceStatuses.foreach {
                 rs =>
                   val blockManagerInfo = env.blockManager.getRemoteBlockManger(rs.blockManagerId)
-                  logInfo(s"frankfzw: The remote BlockManger of ${rs.partition} is ${blockManagerInfo.slaveEndpoint.address}")
+                  logInfo(s"frankfzw: The remote BlockManger of ${rs.partition} is ${blockManagerInfo.slaveEndpoint.address}, it has ${rs.getTotalMapPartiton()} partition")
                   reduceIdToBlockManagerInfo += (rs.partition -> blockManagerInfo)
               }
               task.asInstanceOf[ShuffleMapTask].setPipeFlag(reduceIdToBlockManagerInfo)

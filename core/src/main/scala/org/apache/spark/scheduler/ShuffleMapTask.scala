@@ -19,7 +19,7 @@ package org.apache.spark.scheduler
 
 import java.nio.ByteBuffer
 
-import org.apache.spark.storage.{BlockManagerInfo, BlockManagerId}
+import org.apache.spark.storage.{BlockManager, BlockManagerInfo, BlockManagerId}
 
 import scala.language.existentials
 
@@ -111,7 +111,13 @@ private[spark] class ShuffleMapTask(
       // TODO frankfzw pipe the shuffle, write every partition on the remote memory
       if (pipeFlag) {
         // targetBlockManger.foreach(kv => logInfo(s"frankfzw: Target BlockManger ${kv._1} : ${kv._2.slaveEndpoint.address}"))
+        for (kv <- targetBlockManger) {
+          BlockManager.pipeStart(kv._2.slaveEndpoint, shuffleId, partitionId, kv._1)
+        }
         writer.writeRemote(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]], targetBlockManger)
+        for (kv <- targetBlockManger) {
+          BlockManager.pipeEnd(kv._2.slaveEndpoint, shuffleId, partitionId, kv._1)
+        }
       } else {
         writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])
       }

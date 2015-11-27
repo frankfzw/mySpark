@@ -71,8 +71,17 @@ class BlockManagerSlaveEndpoint(
     case GetMatchingBlockIds(filter, _) =>
       context.reply(blockManager.getMatchingBlockIds(filter))
 
-    case WriteRemote(key, value) =>
-      context.reply(blockManager.remoteWrite(key, value))
+    case WriteRemote(shuffleId, reduceId, key, value) =>
+      context.reply(blockManager.remoteWrite(shuffleId, reduceId, key, value))
+
+    case RegisterShufflePipe(shuffleId, totalMapPartition, reducePartition, totalReducePartition) =>
+      context.reply(blockManager.registerShufflePipe(shuffleId, totalMapPartition, reducePartition, totalReducePartition))
+
+    case PipeStart(shuffleId, mapPartition, reducePartition) =>
+      context.reply(blockManager.pipeStart(shuffleId, mapPartition, reducePartition))
+
+    case PipeEnd(shuffleId, mapPartition, reducePartition) =>
+      context.reply(blockManager.pipeEnd(shuffleId, mapPartition, reducePartition))
   }
 
   private def doAsync[T](actionMessage: String, context: RpcCallContext)(body: => T) {

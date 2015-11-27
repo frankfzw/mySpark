@@ -17,11 +17,15 @@
 
 package org.apache.spark.shuffle
 
+import org.apache.hadoop.io.SequenceFile.Sorter.RawKeyValueIterator
 import org.apache.spark._
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.storage.{BlockManager, ShuffleBlockFetcherIterator}
-import org.apache.spark.util.CompletionIterator
+import org.apache.spark.util.{NextIterator, CompletionIterator}
 import org.apache.spark.util.collection.ExternalSorter
+
+import scala.collection.mutable.ArrayBuffer
+import scala.concurrent.Future
 
 /**
  * Fetches and reads the partitions in range [startPartition, endPartition) from a shuffle by
@@ -40,7 +44,43 @@ private[spark] class BlockStoreShuffleReader[K, C](
 
   /** Read the combined key-values for this reduce task */
   override def read(): Iterator[Product2[K, C]] = {
-    val blockFetcherItr = new ShuffleBlockFetcherIterator(
+    // added by frankfzw: check if the data is pushed by the mapper at first
+    var recordIter: Iterator[(Any, Any)] = null
+    val ser = Serializer.getSerializer(dep.serializer)
+    val serializerInstance = ser.newInstance()
+    var fromCache: Boolean = false
+
+    if (blockManager.isCached(handle.shuffleId)) {
+      logInfo("frankfzw: Reading from local cache")
+      // read from local cache
+      var buffer = new ArrayBuffer[(Any, Any)]()
+      var p = 0
+      for (p <- startPartition until endPartition) {
+        buffer ++= blockManager.getCache(handle.shuffleId, p)
+      }
+      val cache = new NextIterator[(Any, Any)] {
+
+        override protected def getNext() = {
+         try {
+           val kv = buffer(0)
+           buffer -= kv
+           kv
+         } catch {
+           case eof: IndexOutOfBoundsException => {
+             finished = true
+             null
+           }
+         }
+        }
+
+        override protected def close(): Unit = {
+          buffer.clear()
+        }
+      }
+      recordIter = cache
+
+    } else {
+      val blockFetcherItr = new ShuffleBlockFetcherIterator(
       context,
       blockManager.shuffleClient,
       blockManager,
@@ -48,26 +88,25 @@ private[spark] class BlockStoreShuffleReader[K, C](
       // Note: we use getSizeAsMb when no suffix is provided for backwards compatibility
       SparkEnv.get.conf.getSizeAsMb("spark.reducer.maxSizeInFlight", "48m") * 1024 * 1024)
 
-    // frankfzw: check if it get the real data from MapOutputTracker
-    if (blockFetcherItr.empty())
-      return null
+      // frankfzw: check if it get the real data from MapOutputTracker
+      if (blockFetcherItr.empty())
+        return null
 
-    // Wrap the streams for compression based on configuration
-    val wrappedStreams = blockFetcherItr.map { case (blockId, inputStream) =>
-      blockManager.wrapForCompression(blockId, inputStream)
+      // Wrap the streams for compression based on configuration
+      val wrappedStreams = blockFetcherItr.map { case (blockId, inputStream) =>
+        blockManager.wrapForCompression(blockId, inputStream)
+      }
+
+      // Create a key/value iterator for each stream
+      recordIter = wrappedStreams.flatMap { wrappedStream =>
+        // Note: the asKeyValueIterator below wraps a key/value iterator inside of a
+        // NextIterator. The NextIterator makes sure that close() is called on the
+        // underlying InputStream when all records have been read.
+        serializerInstance.deserializeStream(wrappedStream).asKeyValueIterator
+      }
+
+
     }
-
-    val ser = Serializer.getSerializer(dep.serializer)
-    val serializerInstance = ser.newInstance()
-
-    // Create a key/value iterator for each stream
-    val recordIter = wrappedStreams.flatMap { wrappedStream =>
-      // Note: the asKeyValueIterator below wraps a key/value iterator inside of a
-      // NextIterator. The NextIterator makes sure that close() is called on the
-      // underlying InputStream when all records have been read.
-      serializerInstance.deserializeStream(wrappedStream).asKeyValueIterator
-    }
-
     // Update the context task metrics for each record read.
     val readMetrics = context.taskMetrics.createShuffleReadMetricsForDependency()
     val metricIter = CompletionIterator[(Any, Any), Iterator[(Any, Any)]](
@@ -81,8 +120,9 @@ private[spark] class BlockStoreShuffleReader[K, C](
     val interruptibleIter = new InterruptibleIterator[(Any, Any)](context, metricIter)
 
     val aggregatedIter: Iterator[Product2[K, C]] = if (dep.aggregator.isDefined) {
-      if (dep.mapSideCombine) {
+      if (dep.mapSideCombine && !fromCache) {
         // We are reading values that are already combined
+        // added by frankfzw: make sure these key-value pairs are not read from local cache
         val combinedKeyValuesIterator = interruptibleIter.asInstanceOf[Iterator[(K, C)]]
         dep.aggregator.get.combineCombinersByKey(combinedKeyValuesIterator, context)
       } else {
@@ -103,6 +143,7 @@ private[spark] class BlockStoreShuffleReader[K, C](
         // Create an ExternalSorter to sort the data. Note that if spark.shuffle.spill is disabled,
         // the ExternalSorter won't spill to disk.
         val sorter = new ExternalSorter[K, C, C](ordering = Some(keyOrd), serializer = Some(ser))
+        // shouldn't pass the shuffleId since we don'nt
         sorter.insertAll(aggregatedIter)
         context.taskMetrics().incMemoryBytesSpilled(sorter.memoryBytesSpilled)
         context.taskMetrics().incDiskBytesSpilled(sorter.diskBytesSpilled)
@@ -112,5 +153,6 @@ private[spark] class BlockStoreShuffleReader[K, C](
       case None =>
         aggregatedIter
     }
+
   }
 }

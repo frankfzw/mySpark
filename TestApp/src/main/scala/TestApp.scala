@@ -43,6 +43,5 @@ object TestApp {
 
     // result.foreachWith(i => i)((x, i) => println("[result " + i + "] " + x))
 
-    // println(result.toDebugString)
   }
 }

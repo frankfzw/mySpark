@@ -982,7 +982,7 @@ class DAGScheduler(
     val taskIdToLocations = {
       if (stage.PENDING) {
         // partitionsToCompute.map {id => (id, getRandomLocs(stage.rdd, id))}.toMap
-        logInfo(s"frankfzw: submit pendding stage: ${stage} ${stage.getClass} rdd is ${stage.rdd} dep is ${stage.rdd.dependencies}")
+        logInfo(s"frankfzw: submit pendding stage: ${stage} ${stage.getClass} rdd is ${stage.rdd} partition to compute: ${partitionsToCompute.length}")
         val (idToLoaction: Map[Int, Seq[TaskLocation]], reduceStatuses: Array[ReduceStatus]) = getRandomLocs(stage.id, partitionsToCompute.toList)
         for (dep <- stage.rdd.dependencies) {
           val shuffleId = dep match {
@@ -992,6 +992,9 @@ class DAGScheduler(
               logError("frankfzw: submit a pending stage without the shuffle dependency!!")
               -1
           }
+          //update the reducesStatus and register the ShufflePipe to each BlockManager which is going to run the pending tasks
+          reduceStatuses.foreach(rs => rs.setTotalMapPartition(dep.rdd.partitions.length))
+          BlockManager.registerShufflePipe(blockManagerMaster, shuffleId, reduceStatuses)
           mapOutputTracker.registerPendingReduce(shuffleId, reduceStatuses)
         }
         reduceStatuses.foreach(rs => logInfo(s"frankfzw: Random reducer in ${rs.blockManagerId.host}"))

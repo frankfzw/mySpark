@@ -92,7 +92,7 @@ private[spark] class HashShuffleWriter[K, V](
       val bucketId = dep.partitioner.getPartition(elem._1)
       shuffle.writers(bucketId).write(elem._1, elem._2)
       val res = reduceIdToBlockManager.get(bucketId) match {
-        case Some(info) => BlockManager.writeRemote(info.slaveEndpoint, elem._1, elem._2)
+        case Some(info) => BlockManager.writeRemote(info.slaveEndpoint, dep.shuffleId, bucketId, elem._1, elem._2)
         case None =>
           logError(s"frankfzw: No such reducer id ${bucketId}")
           throw new IllegalArgumentException(s"frankfzw: No such reducer id ${bucketId}")

@@ -198,6 +198,52 @@ private[spark] class ExternalSorter[K, V, C](
   private[spark] def numSpills: Int = spills.size
 
 
+  override def insertAllRemote(records: Iterator[Product2[K, V]], shuffleId: Integer): Unit = {
+    // TODO: stop combining if we find that the reduction factor isn't high
+    val shouldCombine = aggregator.isDefined
+
+    if (shouldCombine) {
+      // Combine values in-memory first using our AppendOnlyMap
+      val mergeValue = aggregator.get.mergeValue
+      val createCombiner = aggregator.get.createCombiner
+      var kv: Product2[K, V] = null
+      val update = (hadValue: Boolean, oldValue: C) => {
+        if (hadValue) mergeValue(oldValue, kv._2) else createCombiner(kv._2)
+      }
+      if (reduceIdToBlockManager != null && shuffleId != -1) {
+        // added by frankfzw, we don't perform merge here
+        // just send the record one by one
+        while (records.hasNext) {
+          addElementsRead()
+          kv = records.next()
+          val pid = getPartition(kv._1)
+          BlockManager.writeRemote(reduceIdToBlockManager.get(pid).slaveEndpoint, shuffleId, pid, kv._1, kv._2)
+          map.changeValue((getPartition(kv._1), kv._1), update)
+          maybeSpillCollection(usingMap = true)
+        }
+      } else {
+        logError("frankfzw: Unable to insert remote")
+      }
+
+    } else {
+      // Stick values into our buffer
+      if (reduceIdToBlockManager != null && shuffleId != -1) {
+        // added by frankfzw, we don't perform merge here
+        // just send the record one by one
+        while (records.hasNext) {
+          addElementsRead()
+          val kv = records.next()
+          val pid = getPartition(kv._1)
+          BlockManager.writeRemote(reduceIdToBlockManager.get(pid).slaveEndpoint, shuffleId, pid, kv._1, kv._2)
+          buffer.insert(getPartition(kv._1), kv._1, kv._2.asInstanceOf[C])
+          maybeSpillCollection(usingMap = false)
+        }
+      } else {
+        logError("frankfzw: Unable to insert remote")
+      }
+    }
+  }
+
   override def insertAll(records: Iterator[Product2[K, V]]): Unit = {
     // TODO: stop combining if we find that the reduction factor isn't high
     val shouldCombine = aggregator.isDefined
@@ -210,49 +256,21 @@ private[spark] class ExternalSorter[K, V, C](
       val update = (hadValue: Boolean, oldValue: C) => {
         if (hadValue) mergeValue(oldValue, kv._2) else createCombiner(kv._2)
       }
-      if (reduceIdToBlockManager != null) {
-        // added by frankfzw, we don't perform merge here
-        // just send the record one by one
-        while (records.hasNext) {
-          addElementsRead()
-          kv = records.next()
-          val pid = getPartition(kv._1)
-          BlockManager.writeRemote(reduceIdToBlockManager.get(pid).slaveEndpoint, kv._1, kv._2)
-          map.changeValue((getPartition(kv._1), kv._1), update)
-          maybeSpillCollection(usingMap = true)
-        }
-      } else {
-        while (records.hasNext) {
+      while (records.hasNext) {
           addElementsRead()
           kv = records.next()
           map.changeValue((getPartition(kv._1), kv._1), update)
           maybeSpillCollection(usingMap = true)
-        }
       }
 
     } else {
       // Stick values into our buffer
-      if (reduceIdToBlockManager != null) {
-        // added by frankfzw, we don't perform merge here
-        // just send the record one by one
         while (records.hasNext) {
           addElementsRead()
           val kv = records.next()
-          val pid = getPartition(kv._1)
-          BlockManager.writeRemote(reduceIdToBlockManager.get(pid).slaveEndpoint, kv._1, kv._2)
           buffer.insert(getPartition(kv._1), kv._1, kv._2.asInstanceOf[C])
           maybeSpillCollection(usingMap = false)
         }
-      } else {
-        while (records.hasNext) {
-          addElementsRead()
-          val kv = records.next()
-          val pid = getPartition(kv._1)
-          BlockManager.writeRemote(reduceIdToBlockManager.get(pid).slaveEndpoint, kv._1, kv._2)
-          buffer.insert(getPartition(kv._1), kv._1, kv._2.asInstanceOf[C])
-          maybeSpillCollection(usingMap = false)
-        }
-      }
     }
   }
 

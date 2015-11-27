@@ -114,7 +114,7 @@ private[spark] class SortShuffleWriter[K, V, C](
     val javaHashMap = new java.util.HashMap[Integer, BlockManagerInfo]()
     reduceIdToBlockManager.foreach(kv => javaHashMap.put(Int.box(kv._1), kv._2))
     sorter.setReduceStatus(javaHashMap)
-    sorter.insertAll(records)
+    sorter.insertAllRemote(records, dep.shuffleId)
 
     // Don't bother including the time to open the merged output file in the shuffle write time,
     // because it just opens a single file, so is typically too fast to measure accurately

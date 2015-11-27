@@ -26,5 +26,12 @@ class ReduceStatus (p: Int, bId: BlockManagerId) {
 
   val partition = p
   val blockManagerId = bId
+  private var totalMapPartition:Int = 0;
+
+  def setTotalMapPartition(num: Int): Unit = {
+    totalMapPartition = num
+  }
+
+  def getTotalMapPartiton(): Int = totalMapPartition
 
 }
