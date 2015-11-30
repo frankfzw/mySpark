@@ -87,7 +87,29 @@ It's called by `Exector` to fetch the corresponding `ReduceStatuses`
 
 ## Perform data pushing
 
+### DAGScheduler
+#### submitMissingTasks()
+If the PENDING stage has shuffle dependency, registerShufflePipe with the shuffle id and their locations which are randomly allocated by scheduler.
+It calls the BlockManager.registerShufflePipe
+
 ### BlockManager
+Since there may be several tasks running on one BlockManger, the data structures to cache the status and the map data are complicated.
+
+#### `private val shuffleDataCache: HashMap[Int, Array[ArrayBuffer[(Any, Any)]]] = new HashMap`
+It's used to store the map data, the key is the shuffleId, the value is an Array indexed by the reduce partition number. Each member of an `Array` is an `ArrayBuffer` to store the map data for the reduce partition. Since there may more than one `ReduceTask`s running on the BlockManager, we have to store the each reduce partition by seperately `ArrayBuffer` 
+
+#### `private val shuffleCacheStatus: HashMap[Int, Array[CountDownLatch]] = new HashMap()`
+It's used to record the map condition of each reduce partition. The key is the shuffle ID, the value is the `Array` of 	`CountDownLatch` indexed by the reduce partition number.
+It maybe changed in the future to make it more effective.
+
+#### registerShufflePipe(new added) in Object
+It calls the RegisterShufflePipe of each rpc ref of BlockManager to register the shuffle with the shuffle id, total map partition number, the total reduce partition number and the reduce partition that belongs to this task.
+
+#### registerShufflePipe(new added) in Class
+It creates a key value pair in `shuffleCacheStatus` with `shuffleId -> Array[CountDownLatch]` with the number of total reduce partitions. Each `CountDownLatch` has the number of map patitions to count down.
+
+Besides, it create the the the cache with `shuffleId -> Array[ArrayBuffer[(Any, Any)]]` with the number of reduce partitions.
+
 #### getRemoteBlockManager(new added)
 It's called by `Exectutor` to fetch the remote rpcRef of `BlockManagerSlaveEndpoint`
 
@@ -95,6 +117,18 @@ It ask the `BlockManagerMaster` to fetch the rpcRef
 
 #### writeRemote(new added)
 Send the key-value pair via rpcRef to the remote `BlockManager`
+
+#### pipeStart(new added)
+It's used for debuging
+
+#### pipeEnd(new added)
+It's used to count down the map number of the waitting reduce partition of one shuffle
+
+#### isCached(new added)
+It's called by `BlockStoreShuffleReader` to find out the whether the reduce data of a `shuffleId` is cached.
+
+#### getCache(new added)
+It's called by `BlockStoreShuffleReader`. It waits for the `CountDownLatch` and return the `ArrayBuffer` which contains the stream of key-value pairs.
 
 ### BlockManagerMaster
 #### getRemoteBlockManager(new added)
@@ -107,6 +141,15 @@ It's a rpc message to get the remote `BlockManagerInfo` by transmit the `BlockMa
 
 #### WriteRemote(new added)
 It's a rpc message to write the key-value pair to the remote `BlockManager`
+
+#### RegisterShufflePipe(new added)
+It's a rpc message to call `registerShufflePipe`
+
+#### PipeStart(new added)
+It's a rpc message to call `pipeStart`
+
+#### PipeEnd(new added)
+It's a rpc message to call `pipeEnd`
 
 ### BlockManagerMasterEndpoint
 #### receiveAndReply
@@ -132,11 +175,11 @@ The `writer` here could be `SortShuffleWriter`, `HashShuffleWriter` or `UnsafeSh
 Add an interface named `writeRemote`
 
 ### HashShuffleWriter
-#### writeRemote
+#### writeRemote(new added)
 It performs like the original `write` except it calls the `BlockManager.writeRemote` to send the data to remote reducer one by one.
 
 ### SortShuffleWriter
-#### writeRemote
+#### writeRemote(new added)
 It performs like the original `write` except it call the `setReduceStatus` to offload the data pushing to the sorter
 
 The sorter could be `ExternalSorter` or `BypassMergeSortShuffleWriter`. They both extends the `SortShuffleFileWriter` which is a Java interface
@@ -145,12 +188,15 @@ The sorter could be `ExternalSorter` or `BypassMergeSortShuffleWriter`. They bot
 Add a method named `setReduceStatus` to set the map with `reduceId` and `BlockManagerInfo`
 
 ### ExternalSorter
-#### insertAll()
+#### insertAllRemote(new added)
 If the `reduceIdToBlockManager` is not null, perform the data pushing without combining or merging
 
 ### BypassMergeSortShuffleWriter
-#### insertAll()
+#### insertAllRemote(new added)
 If the `reduceIdToBlockManager` is not null, perform the data pushing one by one
+
+### BlockStoreShuffleReader
+It calls `blockManager.isChached` and `blockManager.getCache` to get the cached data of the corresponding reduce partition of the shuffle.
 
 
 
