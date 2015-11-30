@@ -913,7 +913,7 @@ class DAGScheduler(
         logDebug("missing: " + missing)
         if (missing.isEmpty) {
           logInfo("Submitting " + stage + " (" + stage.rdd + "), which has no missing parents")
-          submitMissingTasks(stage, jobId.get)
+
           for (child <- waitingStages) {
            //frankfzw: submit stage if the parent stages are all running
             logInfo("frankfzw: submitStage waitingStages " + child)
@@ -924,6 +924,7 @@ class DAGScheduler(
               submitMissingTasks(child, jobId.get)
             }
           }
+          submitMissingTasks(stage, jobId.get)
         } else {
           //frankfzw: add the stage to the waitingStage at first
           waitingStages += stage
@@ -989,13 +990,15 @@ class DAGScheduler(
             case shufDep: ShuffleDependency[_, _, _] =>
               shufDep.shuffleId
             case _ =>
-              logError("frankfzw: submit a pending stage without the shuffle dependency!!")
+              // logError("frankfzw: submit a pending stage without the shuffle dependency!!")
               -1
           }
           //update the reducesStatus and register the ShufflePipe to each BlockManager which is going to run the pending tasks
-          reduceStatuses.foreach(rs => rs.setTotalMapPartition(dep.rdd.partitions.length))
-          BlockManager.registerShufflePipe(blockManagerMaster, shuffleId, reduceStatuses)
-          mapOutputTracker.registerPendingReduce(shuffleId, reduceStatuses)
+          if (shuffleId != -1) {
+            reduceStatuses.foreach(rs => rs.setTotalMapPartition(dep.rdd.partitions.length))
+            BlockManager.registerShufflePipe(blockManagerMaster, shuffleId, reduceStatuses)
+            mapOutputTracker.registerPendingReduce(shuffleId, reduceStatuses)
+          }
         }
         reduceStatuses.foreach(rs => logInfo(s"frankfzw: Random reducer in ${rs.blockManagerId.host}"))
         idToLoaction

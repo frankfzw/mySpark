@@ -277,11 +277,12 @@ private[spark] abstract class MapOutputTracker(conf: SparkConf) extends Logging 
       logInfo("frankfzw: Don't have reduce location for shuffle " + shuffleId + ", fetching them; tracker endpoint = " + trackerEndpoint)
       val fetchedBytes = askTracker[Array[Byte]](GetReduceStatus(shuffleId))
       val fetchedStatuses = MapOutputTracker.deserializeReduceStatuses(fetchedBytes)
-      logInfo("frankfzw: Got the reduce locations")
+
       reduceStatuses.put(shuffleId, fetchedStatuses)
       logDebug(s"Fetching map output statuses for shuffle $shuffleId took " +
         s"${System.currentTimeMillis - startTime} ms")
       if (fetchedStatuses != null) {
+        logInfo(s"frankfzw: Got the reduce locations for shuffle ${shuffleId}")
         return fetchedStatuses
       } else {
         logInfo(s"frankfzw: Missing all reduce locations for shuffle ${shuffleId}. Is it because there is no pending stage?")
