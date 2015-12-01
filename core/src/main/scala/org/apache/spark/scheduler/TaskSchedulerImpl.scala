@@ -159,7 +159,7 @@ private[spark] class TaskSchedulerImpl(
 
   override def submitTasks(taskSet: TaskSet) {
     val tasks = taskSet.tasks
-    logInfo("Adding task set " + taskSet.id + " with " + tasks.length + " tasks")
+    logInfo("Adding task set " + taskSet.id + " with " + tasks.length + " tasks of stage " + taskSet.stageId)
     this.synchronized {
       val manager = createTaskSetManager(taskSet, maxTaskFailures)
       val stage = taskSet.stageId
@@ -191,6 +191,7 @@ private[spark] class TaskSchedulerImpl(
       }
       hasReceivedTask = true
     }
+    // logInfo(s"frankfzw: Submit Tasks with ${taskSet.id} with ${tasks.length} of stage ${taskSet.stageId}.")
     backend.reviveOffers()
   }
 
@@ -303,6 +304,8 @@ private[spark] class TaskSchedulerImpl(
     for (taskSet <- sortedTaskSets) {
       logDebug("parentName: %s, name: %s, runningTasks: %s".format(
         taskSet.parent.name, taskSet.name, taskSet.runningTasks))
+      // logInfo("frankfzw: parentName: %s, name: %s, runningTasks: %s".format(
+      //   taskSet.parent.name, taskSet.name, taskSet.runningTasks))
       if (newExecAvail) {
         taskSet.executorAdded()
       }

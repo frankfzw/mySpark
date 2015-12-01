@@ -25,7 +25,9 @@ import org.apache.spark.util.{NextIterator, CompletionIterator}
 import org.apache.spark.util.collection.ExternalSorter
 
 import scala.collection.mutable.ArrayBuffer
-import scala.concurrent.Future
+import scala.concurrent.Await
+import scala.concurrent.duration.Duration
+import scala.util.Success
 
 /**
  * Fetches and reads the partitions in range [startPartition, endPartition) from a shuffle by
@@ -54,9 +56,13 @@ private[spark] class BlockStoreShuffleReader[K, C](
       logInfo("frankfzw: Reading from local cache")
       // read from local cache
       var buffer = new ArrayBuffer[(Any, Any)]()
-      var p = 0
       for (p <- startPartition until endPartition) {
-        buffer ++= blockManager.getCache(handle.shuffleId, p)
+        val res = blockManager.getCache(handle.shuffleId, p)
+        // res.onComplete {
+        //   case Success(value) => buffer ++= value
+        //   case _ => logError(s"frankfzw: Something wrong happens when getting cache of ${handle.shuffleId}:${p}")
+        // }
+        buffer ++= Await.result(res, Duration.Inf)
       }
       val cache = new NextIterator[(Any, Any)] {
 

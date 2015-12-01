@@ -910,30 +910,40 @@ class DAGScheduler(
       logDebug("submitStage(" + stage + ")")
       if (!waitingStages(stage) && !runningStages(stage) && !failedStages(stage)) {
         val missing = getMissingParentStages(stage).sortBy(_.id)
-        logDebug("missing: " + missing)
         if (missing.isEmpty) {
-          logInfo("Submitting " + stage + " (" + stage.rdd + "), which has no missing parents")
-
-          for (child <- waitingStages) {
-           //frankfzw: submit stage if the parent stages are all running
-            logInfo("frankfzw: submitStage waitingStages " + child)
-            val parents = getMissingParentStages(child)
-            if (parents.filter(s => runningStages(s)) == parents) {
-              logInfo("frankfzw: submitting pending stage" + child + " (" + child.rdd + "), whose parents are all running")
-              child.PENDING = true;
-              submitMissingTasks(child, jobId.get)
-            }
-          }
           submitMissingTasks(stage, jobId.get)
         } else {
-          //frankfzw: add the stage to the waitingStage at first
-          waitingStages += stage
-          logInfo("frankfzw: add " + stage + " to the waitingStages at first")
-          for (parent <- missing) {
+          stage.PENDING = true;
+          submitMissingTasks(stage, jobId.get)
+          for (parent <- missing)
             submitStage(parent)
-          }
-
         }
+        // logDebug("missing: " + missing)
+        // if (missing.isEmpty) {
+        //   logInfo("Submitting " + stage + " (" + stage.rdd + "), which has no missing parents")
+
+        //   for (child <- waitingStages) {
+        //     //frankfzw: submit stage if the parent stages are all running
+        //     // logInfo("frankfzw: submitStage waitingStages " + child)
+        //     // submitMissingTasks(stage, jobId.get)
+        //     val parents = getMissingParentStages(child)
+        //     // add this stage to the runningStages at first
+        //     val tempRunningStage = runningStages + stage
+        //     if (parents.filter(s => tempRunningStage(s)) == parents) {
+        //       logInfo("frankfzw: submitting pending stage " + child + " (" + child.rdd + "), whose parents are all running")
+        //       child.PENDING = true;
+        //       submitMissingTasks(child, jobId.get)
+        //     }
+        //   }
+        //   submitMissingTasks(stage, jobId.get)
+        // } else {
+        //   //frankfzw: add the stage to the waitingStage at first
+        //   waitingStages += stage
+        //   logInfo("frankfzw: add " + stage + " to the waitingStages at first")
+        //   for (parent <- missing) {
+        //     submitStage(parent)
+        //   }
+
       }
     } else {
       abortStage(stage, "No active job for stage " + stage.id, None)
@@ -983,24 +993,48 @@ class DAGScheduler(
     val taskIdToLocations = {
       if (stage.PENDING) {
         // partitionsToCompute.map {id => (id, getRandomLocs(stage.rdd, id))}.toMap
-        logInfo(s"frankfzw: submit pendding stage: ${stage} ${stage.getClass} rdd is ${stage.rdd} partition to compute: ${partitionsToCompute.length}")
+        logInfo(s"frankfzw: submit pending stage: ${stage} ${stage.getClass} rdd is ${stage.rdd} partition to compute: ${partitionsToCompute.length}")
         val (idToLoaction: Map[Int, Seq[TaskLocation]], reduceStatuses: Array[ReduceStatus]) = getRandomLocs(stage.id, partitionsToCompute.toList)
-        for (dep <- stage.rdd.dependencies) {
-          val shuffleId = dep match {
-            case shufDep: ShuffleDependency[_, _, _] =>
-              shufDep.shuffleId
-            case _ =>
-              // logError("frankfzw: submit a pending stage without the shuffle dependency!!")
-              -1
-          }
-          //update the reducesStatus and register the ShufflePipe to each BlockManager which is going to run the pending tasks
-          if (shuffleId != -1) {
-            reduceStatuses.foreach(rs => rs.setTotalMapPartition(dep.rdd.partitions.length))
-            BlockManager.registerShufflePipe(blockManagerMaster, shuffleId, reduceStatuses)
-            mapOutputTracker.registerPendingReduce(shuffleId, reduceStatuses)
+        // frankfzw: Get the shuffle dependency of the rdd on the corresponding stage border
+        val visited = new HashSet[RDD[_]]
+        val waitingForVisit = new Stack[RDD[_]]
+        def visit(r: RDD[_]) {
+          if (!visited(r)) {
+            visited += r
+            for (dep <- r.dependencies) {
+              dep match {
+                case shufDep: ShuffleDependency[_, _, _] =>
+                  if (shufDep.shuffleId != -1) {
+                    reduceStatuses.foreach(rs => rs.setTotalMapPartition(dep.rdd.partitions.length))
+                    BlockManager.registerShufflePipe(blockManagerMaster, shufDep.shuffleId, reduceStatuses)
+                    mapOutputTracker.registerPendingReduce(shufDep.shuffleId, reduceStatuses)
+                  }
+                case _ =>
+                  waitingForVisit.push(dep.rdd)
+              }
+            }
           }
         }
-        reduceStatuses.foreach(rs => logInfo(s"frankfzw: Random reducer in ${rs.blockManagerId.host}"))
+        waitingForVisit.push(stage.rdd)
+        while (waitingForVisit.nonEmpty) {
+          visit(waitingForVisit.pop())
+        }
+        // for (dep <- stage.rdd.dependencies) {
+        //   val shuffleId = dep match {
+        //     case shufDep: ShuffleDependency[_, _, _] =>
+        //       shufDep.shuffleId
+        //     case _ =>
+        //       logError("frankfzw: submit a pending stage without the shuffle dependency!!")
+        //       -1
+        //   }
+        //   //update the reducesStatus and register the ShufflePipe to each BlockManager which is going to run the pending tasks
+        //   if (shuffleId != -1) {
+        //     reduceStatuses.foreach(rs => rs.setTotalMapPartition(dep.rdd.partitions.length))
+        //     BlockManager.registerShufflePipe(blockManagerMaster, shuffleId, reduceStatuses)
+        //     mapOutputTracker.registerPendingReduce(shuffleId, reduceStatuses)
+        //   }
+        // }
+        // reduceStatuses.foreach(rs => logInfo(s"frankfzw: Random reducer in ${rs.blockManagerId.host}"))
         idToLoaction
         // TODO frankfzw update the reduceStatuses in MapOutputTracker Master
 
@@ -1028,9 +1062,9 @@ class DAGScheduler(
       }
     }
 
-    for (l <- taskIdToLocations) {
-      println("frankfzw: stage: " + stage + " task id: " + l._1 + " location: " + l._2)
-    }
+    // for (l <- taskIdToLocations) {
+    //   logInfo("frankfzw: stage: " + stage + " task id: " + l._1 + " location: " + l._2.length)
+    // }
 
 
     stage.makeNewStageAttempt(partitionsToCompute.size, taskIdToLocations.values.toSeq)
@@ -1123,6 +1157,7 @@ class DAGScheduler(
           s"Stage ${stage} is actually done; (partitions: ${stage.numPartitions})"
       }
       logDebug(debugString)
+      logInfo(s"frankfzw: ${debugString}")
     }
   }
 
@@ -1607,6 +1642,7 @@ class DAGScheduler(
       visited: HashSet[(RDD[_], Int)]): Seq[TaskLocation] = {
     // If the partition has already been visited, no need to re-visit.
     // This avoids exponential path exploration.  SPARK-695
+    // logInfo(s"frankfzw: Get preferred locations of ${rdd} --> ${partition}")
     if (!visited.add((rdd, partition))) {
       // Nil has already been returned for previously visited partitions.
       return Nil
@@ -1623,8 +1659,7 @@ class DAGScheduler(
     val rddPrefs = rdd.preferredLocations(rdd.partitions(partition)).toList
     if (rddPrefs.nonEmpty) {
       //frankfzw: print here
-      // val temp = rddPrefs.map(_.clone())
-      // temp.map(x => "frankfzw: " + x.toString).foreach(println)
+      // rddPrefs.map(x => s"frankfzw: ${rdd} location: ${x.toString}").foreach(x => logInfo(x))
       return rddPrefs.map(TaskLocation(_))
     }
 

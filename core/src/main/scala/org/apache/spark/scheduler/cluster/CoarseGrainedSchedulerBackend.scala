@@ -180,6 +180,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
     private def makeOffers() {
       // Filter out executors under killing
       val activeExecutors = executorDataMap.filterKeys(!executorsPendingToRemove.contains(_))
+      // activeExecutors.foreach(x => logInfo(s"frankfzw: Active executors ${x._2.executorHost}"))
       val workOffers = activeExecutors.map { case (id, executorData) =>
         new WorkerOffer(id, executorData.executorHost, executorData.freeCores)
       }.toSeq

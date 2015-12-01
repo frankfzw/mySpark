@@ -41,7 +41,7 @@ object TestApp {
 
     val result = hashPairs1.join(rangePairs)
 
-    result.foreachWith(i => i)((x, i) => println("[result " + i + "] " + x))
+    result.foreach(println)
 
   }
 }

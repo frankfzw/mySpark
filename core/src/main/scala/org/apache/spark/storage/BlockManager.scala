@@ -200,7 +200,7 @@ private[spark] class BlockManager(
    * @return
    */
   def remoteWrite(shuffleId: Int, reduceId: Int, key: Any, value: Any): Boolean = {
-    logInfo(s"frankfzw: Receive the remote pushing data of shuffle ${shuffleId} : partition ${reduceId}; ${key} -> ${value}; ${shuffleDataCache(shuffleId).length}")
+    // logInfo(s"frankfzw: Receive the remote pushing data of shuffle ${shuffleId} : partition ${reduceId}; ${key} -> ${value}; ${shuffleDataCache(shuffleId).length}")
     val record = (key, value)
     shuffleDataCache(shuffleId)(reduceId) += record
     true
@@ -249,9 +249,13 @@ private[spark] class BlockManager(
    * @param shuffleId
    * @return
    */
-  def getCache(shuffleId: Int, reducePartition: Int): ArrayBuffer[(Any, Any)] = {
-    shuffleCacheStatus(shuffleId)(reducePartition).await()
-    return shuffleDataCache(shuffleId)(reducePartition)
+  def getCache(shuffleId: Int, reducePartition: Int): Future[ArrayBuffer[(Any, Any)]] = {
+    val res = Future[ArrayBuffer[(Any, Any)]] {
+      shuffleCacheStatus(shuffleId)(reducePartition).await()
+      shuffleDataCache(shuffleId)(reducePartition)
+    }(futureExecutionContext)
+    logInfo(s"frankfzw: Return the Future with ${shuffleId}:${reducePartition}")
+    return res
   }
 
   /**
