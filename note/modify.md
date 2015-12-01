@@ -1,15 +1,17 @@
-# Early Scheduling of ResultStage
+# Early Scheduling of ResultStage (updated)
 
 ## Stage
 add `val PENDING = false`. The default status of a stage is false. When it's submitted with unfinished parents, we set `PENDING = true`
 
 ## DAGScheduler
-### submitStage: 
-if `(missing.isEmpty)`, this stage will become running. So we check every stage in waitingStages, 
+### submitStage: Important
+Submit the satge from the **Final stage to their parents**, i.e. we find the final stage, mark it `PENDING` if it has missing parents, and submit it, and then find it's parents and submit them recursively.
 
-if their parents are all running, we try to submit the stage and mark `PENDING = true`;
 ### submitMissingTasks: 
-if the stage is `PENDING`, we use getRandomLocs to assign the tasks to the random locations.
+If the stage is `PENDING`, we use `getRandomLocs` to assign the tasks to the random locations.
+
+After that, we find the shuffle dependency on the border of the stage and call `BlockManger.registerShufflePipe` to notify the random reducer to get ready. Besides it calls the `MapOutputTracker.registerPendingReduce` to register shuffle pipe.
+
 ### getRandomLocs(new added): 
 Ask the `BlockManagerMaster` to get the acitve block host and assign the task to the locations.
 
@@ -33,9 +35,6 @@ Return the `blockMangerInfo.keySet` which is a collection of `BlockManagerId`
     Since the RDD of the early scheduling stage will always be a ShuffledRDD, we modified the ShuffledRDD
     to make it wait.
 
-## ShuffledRDD
-### compute: 
-Sleep 50 ms and do check until the read doesn't return null
 ## BlockStoreShuffleReader
 It calls `MapOutputTracker` to fill the `ShuffleBlockFetcherIterator` in read
 ### read:
@@ -89,16 +88,16 @@ It's called by `Exector` to fetch the corresponding `ReduceStatuses`
 
 ### DAGScheduler
 #### submitMissingTasks()
-If the PENDING stage has shuffle dependency, registerShufflePipe with the shuffle id and their locations which are randomly allocated by scheduler.
+If the PENDING stage has shuffle dependency, `registerShufflePipe` with the shuffle id and their locations which are randomly allocated by scheduler.
 It calls the BlockManager.registerShufflePipe
 
 ### BlockManager
 Since there may be several tasks running on one BlockManger, the data structures to cache the status and the map data are complicated.
 
-#### `private val shuffleDataCache: HashMap[Int, Array[ArrayBuffer[(Any, Any)]]] = new HashMap`
+#### `private val shuffleDataCache: HashMap[Int, Array[ArrayBuffer[(Any, Any)]]]`
 It's used to store the map data, the key is the shuffleId, the value is an Array indexed by the reduce partition number. Each member of an `Array` is an `ArrayBuffer` to store the map data for the reduce partition. Since there may more than one `ReduceTask`s running on the BlockManager, we have to store the each reduce partition by seperately `ArrayBuffer` 
 
-#### `private val shuffleCacheStatus: HashMap[Int, Array[CountDownLatch]] = new HashMap()`
+#### `private val shuffleCacheStatus: HashMap[Int, Array[CountDownLatch]]`
 It's used to record the map condition of each reduce partition. The key is the shuffle ID, the value is the `Array` of 	`CountDownLatch` indexed by the reduce partition number.
 It maybe changed in the future to make it more effective.
 
@@ -167,7 +166,7 @@ If the return value of `reduceStatuses` is not null, which means there are some 
 
 ### ShuffleMapTask
 #### runTask
-If the `pipeFlag` is true, perform `writeRemote` instead of write.
+If the `pipeFlag` is true, perform `writeRemote` instead of write. 
 
 The `writer` here could be `SortShuffleWriter`, `HashShuffleWriter` or `UnsafeShuffleWriter`. These three writer all extend the `ShuffleWriter`. We skip the `UnsafeShuffleWriter` at first.
 
