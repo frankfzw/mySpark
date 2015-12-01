@@ -127,7 +127,7 @@ It's used to count down the map number of the waitting reduce partition of one s
 It's called by `BlockStoreShuffleReader` to find out the whether the reduce data of a `shuffleId` is cached.
 
 #### getCache(new added)
-It's called by `BlockStoreShuffleReader`. It waits for the `CountDownLatch` and return the `ArrayBuffer` which contains the stream of key-value pairs.
+It's called by `BlockStoreShuffleReader`. It returns a `Future[ArrayBuffer[(Any, Any)]]` with the waiting of  `CountDownLatch` which contains the stream of key-value pairs.
 
 ### BlockManagerMaster
 #### getRemoteBlockManager(new added)
@@ -195,7 +195,7 @@ If the `reduceIdToBlockManager` is not null, perform the data pushing without co
 If the `reduceIdToBlockManager` is not null, perform the data pushing one by one
 
 ### BlockStoreShuffleReader
-It calls `blockManager.isChached` and `blockManager.getCache` to get the cached data of the corresponding reduce partition of the shuffle.
+It calls `blockManager.isChached` and `blockManager.getCache` to wait and get the cached data of the corresponding reduce partition of the shuffle.
 
 
 
