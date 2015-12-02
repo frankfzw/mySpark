@@ -192,7 +192,7 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
     this(master, appName, sparkHome, jars, Map())
 
   // log out Spark Version in Spark driver log
-  logInfo(s"Running Spark version $SPARK_VERSION")
+  logInfo(s"Running Spark version $SPARK_VERSION with piping shuffle. Created by frankfzw")
 
   /* ------------------------------------------------------------------------------------- *
    | Private variables. These variables keep the internal state of the context, and are    |
