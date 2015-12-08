@@ -57,35 +57,6 @@ private[spark] class BlockStoreShuffleReader[K, C](
     if (blockManager.isCached(handle.shuffleId)) {
       fromCache = true
       logInfo("frankfzw: Reading from local cache")
-      // read from local cache
-      // var buffer = new ArrayBuffer[(Any, Any)]()
-      // for (p <- startPartition until endPartition) {
-      //   val res = blockManager.getCache(handle.shuffleId, p)
-      //   // res.onComplete {
-      //   //   case Success(value) => buffer ++= value
-      //   //   case _ => logError(s"frankfzw: Something wrong happens when getting cache of ${handle.shuffleId}:${p}")
-      //   // }
-      //   buffer ++= Await.result(res, Duration.Inf)
-      // }
-      // val cache = new NextIterator[(Any, Any)] {
-
-      //   override protected def getNext() = {
-      //    try {
-      //      val kv = buffer(0)
-      //      buffer -= kv
-      //      kv
-      //    } catch {
-      //      case eof: IndexOutOfBoundsException => {
-      //        finished = true
-      //        null
-      //      }
-      //    }
-      //   }
-
-      //   override protected def close(): Unit = {
-      //     buffer.clear()
-      //   }
-      // }
       val bufferArray = new Array[ArrayBuffer[(Any, Any)]](endPartition - startPartition)
       val lockArray = new Array[CountDownLatch](endPartition - startPartition)
       for (p <- startPartition until endPartition) {
@@ -212,10 +183,8 @@ private[spark] class BlockStoreShuffleReader[K, C](
         context.taskMetrics().incDiskBytesSpilled(sorter.diskBytesSpilled)
         context.internalMetricsToAccumulators(
           InternalAccumulator.PEAK_EXECUTION_MEMORY).add(sorter.peakMemoryUsedBytes)
-        logInfo(s"frankfzw: Dep has a key order, ${sorter.iterator.length}")
         sorter.iterator
       case None =>
-        logInfo(s"frankfze: Dep doesn't have a key order, ${aggregatedIter.length}")
         aggregatedIter
     }
 
