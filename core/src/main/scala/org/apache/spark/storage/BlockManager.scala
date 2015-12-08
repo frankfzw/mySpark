@@ -172,7 +172,7 @@ private[spark] class BlockManager(
   private lazy val compressionCodec: CompressionCodec = CompressionCodec.createCodec(conf)
 
   // added by frankfzw, cache the shuffle data
-  private val shuffleDataCache: HashMap[Int, Array[ArrayBuffer[(Any, Any)]]] = new HashMap
+  private val shuffleDataCache: TrieMap[Int, Array[ArrayBuffer[(Any, Any)]]] = new TrieMap
   private val shuffleCacheStatus: HashMap[Int, Array[CountDownLatch]] = new HashMap()
 
   /**
@@ -243,19 +243,25 @@ private[spark] class BlockManager(
   }
 
   /**
-   * added by frankfze
+   * added by frankfzw
    * called by BlockStoreShuffleReader to fetch the cached data
    * block here
    * @param shuffleId
    * @return
    */
-  def getCache(shuffleId: Int, reducePartition: Int): Future[ArrayBuffer[(Any, Any)]] = {
-    val res = Future[ArrayBuffer[(Any, Any)]] {
-      shuffleCacheStatus(shuffleId)(reducePartition).await()
-      shuffleDataCache(shuffleId)(reducePartition)
-    }(futureExecutionContext)
-    logInfo(s"frankfzw: Return the Future with ${shuffleId}:${reducePartition}")
-    return res
+  // def getCache(shuffleId: Int, reducePartition: Int): Future[ArrayBuffer[(Any, Any)]] = {
+  //   val res = Future[ArrayBuffer[(Any, Any)]] {
+  //     shuffleCacheStatus(shuffleId)(reducePartition).await()
+  //     shuffleDataCache(shuffleId)(reducePartition)
+  //   }(futureExecutionContext)
+  //   logInfo(s"frankfzw: Return the Future with ${shuffleId}:${reducePartition}")
+  //   return res
+  // }
+
+  def getCache(shuffleId: Int, reducePartition: Int): (ArrayBuffer[(Any, Any)], CountDownLatch) = {
+    val buffer = shuffleDataCache(shuffleId)(reducePartition)
+    val lock = shuffleCacheStatus(shuffleId)(reducePartition)
+    (buffer, lock)
   }
 
   /**
