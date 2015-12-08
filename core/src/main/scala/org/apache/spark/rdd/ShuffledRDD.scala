@@ -101,11 +101,10 @@ class ShuffledRDD[K: ClassTag, V: ClassTag, C: ClassTag](
       time = time + 1
       logInfo("frankfzw: Map partion " + split + " is not ready, waiting for " + time * 50 + " milliseconds")
     }
-    val ret =  SparkEnv.get.shuffleManager.getReader(dep.shuffleHandle, split.index, split.index + 1, context)
+    SparkEnv.get.shuffleManager.getReader(dep.shuffleHandle, split.index, split.index + 1, context)
       .read()
       .asInstanceOf[Iterator[(K, C)]]
     // logInfo(s"frankfzw: Got the iterator ${ret.length}")
-    ret
   }
 
   override def clearDependencies() {

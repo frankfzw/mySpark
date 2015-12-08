@@ -29,7 +29,6 @@ import org.apache.spark.util.collection.ExternalSorter
 import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
-import scala.util.Success
 import scala.util.control.Breaks._
 
 /**
@@ -56,90 +55,91 @@ private[spark] class BlockStoreShuffleReader[K, C](
     var fromCache: Boolean = false
 
     if (blockManager.isCached(handle.shuffleId)) {
-      logInfo("frankfzw: Reading from local cache")
       fromCache = true
+      logInfo("frankfzw: Reading from local cache")
       // read from local cache
-      var buffer = new ArrayBuffer[(Any, Any)]()
-      for (p <- startPartition until endPartition) {
-        val res = blockManager.getCache(handle.shuffleId, p)
-        // res.onComplete {
-        //   case Success(value) => buffer ++= value
-        //   case _ => logError(s"frankfzw: Something wrong happens when getting cache of ${handle.shuffleId}:${p}")
-        // }
-        buffer ++= Await.result(res, Duration.Inf)
-      }
-      val cache = new NextIterator[(Any, Any)] {
-
-        override protected def getNext() = {
-         try {
-           val kv = buffer(0)
-           buffer -= kv
-           kv
-         } catch {
-           case eof: IndexOutOfBoundsException => {
-             finished = true
-             null
-           }
-         }
-        }
-
-        override protected def close(): Unit = {
-          buffer.clear()
-        }
-      }
-      // val bufferArray = new Array[ArrayBuffer[(Any, Any)]](endPartition - startPartition)
-      // val lockArray = new Array[CountDownLatch](endPartition - startPartition)
+      // var buffer = new ArrayBuffer[(Any, Any)]()
       // for (p <- startPartition until endPartition) {
-      //   val (buffer, lock) = blockManager.getCache(handle.shuffleId, p)
-      //   bufferArray(p - startPartition) = buffer
-      //   lockArray(p - startPartition) = lock
+      //   val res = blockManager.getCache(handle.shuffleId, p)
+      //   // res.onComplete {
+      //   //   case Success(value) => buffer ++= value
+      //   //   case _ => logError(s"frankfzw: Something wrong happens when getting cache of ${handle.shuffleId}:${p}")
+      //   // }
+      //   buffer ++= Await.result(res, Duration.Inf)
       // }
       // val cache = new NextIterator[(Any, Any)] {
-      //   var i = 0
-
-      //   private def getKV(index: Int): (Any, Any) = {
-      //     if (index == (endPartition - startPartition)) {
-      //       // generate the IndexOutOfBoundsException here
-      //       bufferArray(0)(bufferArray.length)
-      //     }
-      //     if (lockArray(index).getCount != 0 || bufferArray(index).length != 0) {
-      //       breakable{
-      //         while (bufferArray(index).length == 0) {
-      //           if (bufferArray(index).length != 0 || lockArray(index).getCount == 0)
-      //             break
-      //         }
-      //       }
-      //       if (bufferArray(index).length !=0 ) {
-      //         val kv = bufferArray(index)(0)
-      //         bufferArray(index) -= kv
-      //         return kv
-      //       }
-      //     }
-      //     null
-      //   }
 
       //   override protected def getNext() = {
-      //     try {
-      //       var kv: (Any, Any) = getKV(i)
-      //       while (kv == null) {
-      //         i = i + 1
-      //         kv = getKV(i)
-      //       }
-      //       // logInfo(s"frankfzw: got kv pair ${kv}")
-      //       kv
-      //     } catch {
-      //       case eof: IndexOutOfBoundsException => {
-      //         finished = true
-      //         null
-      //       }
-      //     }
+      //    try {
+      //      val kv = buffer(0)
+      //      buffer -= kv
+      //      kv
+      //    } catch {
+      //      case eof: IndexOutOfBoundsException => {
+      //        finished = true
+      //        null
+      //      }
+      //    }
       //   }
 
-      //   override  protected def close(): Unit = {
-      //     for(b <- bufferArray)
-      //       b.clear()
+      //   override protected def close(): Unit = {
+      //     buffer.clear()
       //   }
       // }
+      val bufferArray = new Array[ArrayBuffer[(Any, Any)]](endPartition - startPartition)
+      val lockArray = new Array[CountDownLatch](endPartition - startPartition)
+      for (p <- startPartition until endPartition) {
+        val (buffer, lock) = blockManager.getCacheWithLock(handle.shuffleId, p)
+        bufferArray(p - startPartition) = buffer
+        lockArray(p - startPartition) = lock
+      }
+      val cache = new NextIterator[(Any, Any)] {
+        var i = 0
+
+        private def getKV(index: Int): (Any, Any) = {
+          if (index == (endPartition - startPartition)) {
+            // generate the IndexOutOfBoundsException here
+            bufferArray(0)(bufferArray.length)
+          }
+          if (lockArray(index).getCount != 0 || bufferArray(index).length != 0) {
+            breakable{
+              while (bufferArray(index).length == 0) {
+                if (bufferArray(index).length != 0 || lockArray(index).getCount == 0)
+                  break
+              }
+            }
+            if (bufferArray(index).length !=0 ) {
+              val kv = bufferArray(index)(0)
+              bufferArray(index) -= kv
+              return kv
+            }
+          }
+          null
+        }
+
+        override protected def getNext() = {
+          try {
+            var kv: (Any, Any) = getKV(i)
+            while (kv == null) {
+              i = i + 1
+              kv = getKV(i)
+            }
+            // logInfo(s"frankfzw: got kv pair ${kv}")
+            kv
+          } catch {
+            case eof: IndexOutOfBoundsException => {
+              finished = true
+              null
+            }
+          }
+        }
+
+        override  protected def close(): Unit = {
+          for(b <- bufferArray)
+            b.clear()
+        }
+      }
+
       recordIter = cache
 
     } else {

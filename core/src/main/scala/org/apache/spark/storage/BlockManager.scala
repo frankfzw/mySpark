@@ -172,8 +172,8 @@ private[spark] class BlockManager(
   private lazy val compressionCodec: CompressionCodec = CompressionCodec.createCodec(conf)
 
   // added by frankfzw, cache the shuffle data
-  private val shuffleDataCache: HashMap[Int, Array[ArrayBuffer[(Any, Any)]]] = new HashMap
-  private val shuffleCacheStatus: HashMap[Int, Array[CountDownLatch]] = new HashMap()
+  private val shuffleDataCache: TrieMap[Int, Array[ArrayBuffer[(Any, Any)]]] = new TrieMap
+  private val shuffleCacheStatus: TrieMap[Int, Array[CountDownLatch]] = new TrieMap
 
   /**
    * added by frankfzw
@@ -258,12 +258,9 @@ private[spark] class BlockManager(
     return res
   }
 
-  // def getCache(shuffleId: Int, reducePartition: Int): (ArrayBuffer[(Any, Any)], CountDownLatch) = {
-  //   val buffer = shuffleDataCache(shuffleId)(reducePartition)
-  //   val lock = shuffleCacheStatus(shuffleId)(reducePartition)
-  //   (buffer, lock)
-  // }
-
+  def getCacheWithLock(shuffleId: Int, reducePartition: Int): (ArrayBuffer[(Any, Any)], CountDownLatch) = {
+    (shuffleDataCache(shuffleId)(reducePartition), shuffleCacheStatus(shuffleId)(reducePartition))
+  }
   /**
    * added by frankfzw
    * record the start of one map task
