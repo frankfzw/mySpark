@@ -17,16 +17,32 @@
 
 package org.apache.spark.scheduler
 
+import java.io.{ObjectInput, ObjectOutput, Externalizable}
+
 import org.apache.spark.util.Utils
 import org.apache.spark.storage.BlockManagerId
 /**
  * Created by frankfzw on 15-11-9.
  */
-private[spark] class ReduceStatus (p: Int, bId: BlockManagerId) extends Serializable{
+private[spark] class ReduceStatus (p: Int, bId: BlockManagerId) extends Externalizable{
 
-  val partition = p
-  val blockManagerId = bId
+  var partition = p
+  var blockManagerId = bId
   private var totalMapPartition:Int = 0;
+
+  private def this() = this(0, null)
+
+  override def readExternal(in: ObjectInput): Unit = {
+    blockManagerId = BlockManagerId(in)
+    partition = in.readInt()
+    totalMapPartition = in.readInt()
+  }
+
+  override def writeExternal(out: ObjectOutput): Unit = {
+    bId.writeExternal(out)
+    out.writeInt(partition)
+    out.writeInt(totalMapPartition)
+  }
 
   def setTotalMapPartition(num: Int): Unit = {
     totalMapPartition = num
