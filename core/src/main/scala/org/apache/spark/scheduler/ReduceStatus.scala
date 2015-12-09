@@ -30,16 +30,18 @@ private[spark] class ReduceStatus (p: Int, bId: BlockManagerId) extends External
   var blockManagerId = bId
   private var totalMapPartition:Int = 0;
 
-  private def this() = this(0, null)
+  protected def this() = this(0, null)
 
   override def readExternal(in: ObjectInput): Unit = {
     blockManagerId = BlockManagerId(in)
+   // blockManagerId.readExternal(in)
     partition = in.readInt()
     totalMapPartition = in.readInt()
   }
 
   override def writeExternal(out: ObjectOutput): Unit = {
-    bId.writeExternal(out)
+    blockManagerId.writeExternal(out)
+    // blockManagerId.writeExternal(out)
     out.writeInt(partition)
     out.writeInt(totalMapPartition)
   }
