@@ -32,7 +32,7 @@ object TestApp {
     val rangePairs2 = pairs2.map(x => (x._1, x._2.charAt(0)))
 
 
-    val data3 = Array[(Int, Char)]((1, 'X'), (2, 'Y'))
+    val data3 = Array[(Int, Char)]((1, 'X'), (2, 'Y'), (5, 'Z'))
     val rangePairs3 = sc.parallelize(data3, 2)
 
 
