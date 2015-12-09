@@ -71,23 +71,20 @@ private[spark] class MapOutputTrackerMasterEndpoint(
       // TODO frankfzw return the serialized Array of ReduceStatus
       val hostPort = context.senderAddress.hostPort
       logInfo("frankfzw: Asked to send reduce location for shuffle " + shuffleId + " to " + hostPort)
-      // val reduceStatus = tracker.getSerializedReduceStatuses(shuffleId)
-      // val serializedSize = reduceStatus.length
-      // if (serializedSize > maxAkkaFrameSize) {
-      //   val msg = s"Map output statuses were $serializedSize bytes which " +
-      //     s"exceeds spark.akka.frameSize ($maxAkkaFrameSize bytes)."
+      val reduceStatus = tracker.getSerializedReduceStatuses(shuffleId)
+      val serializedSize = reduceStatus.length
+      if (serializedSize > maxAkkaFrameSize) {
+        val msg = s"Map output statuses were $serializedSize bytes which " +
+          s"exceeds spark.akka.frameSize ($maxAkkaFrameSize bytes)."
 
-      //   /* For SPARK-1244 we'll opt for just logging an error and then sending it to the sender.
-      //    * A bigger refactoring (SPARK-1239) will ultimately remove this entire code path. */
-      //   val exception = new SparkException(msg)
-      //   logError(msg, exception)
-      //   context.sendFailure(exception)
-      // } else {
-      //   context.reply(reduceStatus)
-      // }
-      val reduceStatus = tracker.getReduceStatuses(shuffleId)
-      context.reply(reduceStatus)
-
+        /* For SPARK-1244 we'll opt for just logging an error and then sending it to the sender.
+         * A bigger refactoring (SPARK-1239) will ultimately remove this entire code path. */
+        val exception = new SparkException(msg)
+        logError(msg, exception)
+        context.sendFailure(exception)
+      } else {
+        context.reply(reduceStatus)
+      }
 
     case StopMapOutputTracker =>
       logInfo("MapOutputTrackerMasterEndpoint stopped!")
@@ -278,10 +275,9 @@ private[spark] abstract class MapOutputTracker(conf: SparkConf) extends Logging 
       // TODO frankfzw ask the MapOutputTrackerMaster to get the new data.
       val startTime = System.currentTimeMillis
       logInfo("frankfzw: Don't have reduce location for shuffle " + shuffleId + ", fetching them; tracker endpoint = " + trackerEndpoint)
-      // val fetchedBytes = askTracker[Array[Byte]](GetReduceStatus(shuffleId))
-      // val fetchedStatuses = MapOutputTracker.deserializeReduceStatuses(fetchedBytes)
+      val fetchedBytes = askTracker[Array[Byte]](GetReduceStatus(shuffleId))
+      val fetchedStatuses = MapOutputTracker.deserializeReduceStatuses(fetchedBytes)
 
-      val fetchedStatuses = askTracker[Array[ReduceStatus]](GetReduceStatus(shuffleId))
       reduceStatuses.put(shuffleId, fetchedStatuses)
       logDebug(s"Fetching map output statuses for shuffle $shuffleId took " +
         s"${System.currentTimeMillis - startTime} ms")
