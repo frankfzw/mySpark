@@ -21,6 +21,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.HashMap;
 
+import org.apache.spark.rpc.RpcEndpointRef;
 import org.apache.spark.storage.BlockManagerInfo;
 import scala.Product2;
 import scala.collection.Iterator;
@@ -59,5 +60,5 @@ public interface SortShuffleFileWriter<K, V> {
    * added by frankfzw
    * Called by SortShuffleWriter to add reduceIdToBlockManager
    */
-  void setReduceStatus(HashMap<Integer, BlockManagerInfo> reduceIdToBlockManager);
+  void setReduceStatus(HashMap<Integer, RpcEndpointRef> reduceIdToBlockManager);
 }

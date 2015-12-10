@@ -149,8 +149,11 @@ class BlockManagerMasterEndpoint(
    * @param blockMangerId
    * @return Option[BlockManagerInfo]
    */
-  private def getRemoteBlockManager(blockMangerId: BlockManagerId): Option[BlockManagerInfo] = {
-    blockManagerInfo.get(blockMangerId)
+  private def getRemoteBlockManager(blockMangerId: BlockManagerId): RpcEndpointRef= {
+    if (blockManagerInfo.contains(blockMangerId))
+      return blockManagerInfo(blockMangerId).slaveEndpoint
+    else
+      throw new IllegalArgumentException(s"Missing ${blockMangerId.executorId}")
   }
 
   private def removeRdd(rddId: Int): Future[Seq[Int]] = {

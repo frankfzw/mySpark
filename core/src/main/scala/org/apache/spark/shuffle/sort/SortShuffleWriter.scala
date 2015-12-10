@@ -19,6 +19,7 @@ package org.apache.spark.shuffle.sort
 
 import org.apache.spark._
 import org.apache.spark.executor.ShuffleWriteMetrics
+import org.apache.spark.rpc.RpcEndpointRef
 import org.apache.spark.scheduler.MapStatus
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.shuffle.{IndexShuffleBlockResolver, ShuffleWriter, BaseShuffleHandle}
@@ -87,7 +88,7 @@ private[spark] class SortShuffleWriter[K, V, C](
 
   }
 
-  override def writeRemote(records: Iterator[Product2[K, V]], reduceIdToBlockManager: HashMap[Int, BlockManagerInfo]): Unit = {
+  override def writeRemote(records: Iterator[Product2[K, V]], reduceIdToBlockManager: HashMap[Int, RpcEndpointRef]): Unit = {
     sorter = if (dep.mapSideCombine) {
       require(dep.aggregator.isDefined, "Map-side combine without Aggregator specified!")
       new ExternalSorter[K, V, C](
@@ -111,7 +112,7 @@ private[spark] class SortShuffleWriter[K, V, C](
     // added by frankfzw
     // send the reduceIdToBlockManger to sorter
     // convert to a java HashMap<Integer, BlockInfo> at first
-    val javaHashMap = new java.util.HashMap[Integer, BlockManagerInfo]()
+    val javaHashMap = new java.util.HashMap[Integer, RpcEndpointRef]()
     reduceIdToBlockManager.foreach(kv => javaHashMap.put(Int.box(kv._1), kv._2))
     sorter.setReduceStatus(javaHashMap)
     sorter.insertAllRemote(records, dep.shuffleId)

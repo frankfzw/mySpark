@@ -25,6 +25,7 @@ import java.lang.Integer;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.apache.spark.rpc.RpcEndpointRef;
 import scala.Product2;
 import scala.Tuple2;
 import scala.collection.Iterator;
@@ -76,10 +77,10 @@ final class BypassMergeSortShuffleWriter<K, V> implements SortShuffleFileWriter<
   private final int numPartitions;
 
   // added by frankfzw
-  private HashMap<Integer, BlockManagerInfo> reduceIdToBlockManager = null;
+  private HashMap<Integer, RpcEndpointRef> reduceIdToBlockManager = null;
 
   @Override
-  public void setReduceStatus(HashMap<Integer, BlockManagerInfo> rIdToInfo) {
+  public void setReduceStatus(HashMap<Integer, RpcEndpointRef> rIdToInfo) {
     reduceIdToBlockManager = new HashMap<>();
     reduceIdToBlockManager = rIdToInfo;
   }
@@ -144,7 +145,7 @@ final class BypassMergeSortShuffleWriter<K, V> implements SortShuffleFileWriter<
 
         int pid = partitioner.getPartition(key);
         // frankfzw: It may cause an null exception
-        BlockManager.writeRemote(reduceIdToBlockManager.get(pid).slaveEndpoint(), shuffleId, pid, key, record._2());
+        BlockManager.writeRemote(reduceIdToBlockManager.get(pid), shuffleId, pid, key, record._2());
       }
     } else {
       logger.error("frankfzw: Unable to insert remote");

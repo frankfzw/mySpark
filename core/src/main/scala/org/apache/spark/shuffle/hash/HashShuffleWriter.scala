@@ -19,6 +19,7 @@ package org.apache.spark.shuffle.hash
 
 import org.apache.spark._
 import org.apache.spark.executor.ShuffleWriteMetrics
+import org.apache.spark.rpc.RpcEndpointRef
 import org.apache.spark.scheduler.MapStatus
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.shuffle._
@@ -76,7 +77,7 @@ private[spark] class HashShuffleWriter[K, V](
    * @param records
    * @param reduceIdToBlockManager
    */
-  override def writeRemote(records: Iterator[Product2[K, V]], reduceIdToBlockManager: HashMap[Int, BlockManagerInfo]): Unit = {
+  override def writeRemote(records: Iterator[Product2[K, V]], reduceIdToBlockManager: HashMap[Int, RpcEndpointRef]): Unit = {
     val iter = if (dep.aggregator.isDefined) {
       if (dep.mapSideCombine) {
         dep.aggregator.get.combineValuesByKey(records, context)
@@ -92,7 +93,7 @@ private[spark] class HashShuffleWriter[K, V](
       val bucketId = dep.partitioner.getPartition(elem._1)
       shuffle.writers(bucketId).write(elem._1, elem._2)
       val res = reduceIdToBlockManager.get(bucketId) match {
-        case Some(info) => BlockManager.writeRemote(info.slaveEndpoint, dep.shuffleId, bucketId, elem._1, elem._2)
+        case Some(info) => BlockManager.writeRemote(info, dep.shuffleId, bucketId, elem._1, elem._2)
         case None =>
           logError(s"frankfzw: No such reducer id ${bucketId}")
           throw new IllegalArgumentException(s"frankfzw: No such reducer id ${bucketId}")

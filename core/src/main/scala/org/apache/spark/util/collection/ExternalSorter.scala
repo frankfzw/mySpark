@@ -20,6 +20,7 @@ package org.apache.spark.util.collection
 import java.io._
 import java.util.Comparator
 
+import org.apache.spark.rpc.RpcEndpointRef
 import org.apache.spark.storage.BlockManagerMessages.WriteRemote
 
 import scala.collection.mutable.ArrayBuffer
@@ -119,7 +120,7 @@ private[spark] class ExternalSorter[K, V, C](
   private val serInstance = ser.newInstance()
 
   // added by frankfzw
-  private var reduceIdToBlockManager: java.util.HashMap[Integer, BlockManagerInfo] = null
+  private var reduceIdToBlockManager: java.util.HashMap[Integer, RpcEndpointRef] = null
 
   // Use getSizeAsKb (not bytes) to maintain backwards compatibility if no units are provided
   private val fileBufferSize = conf.getSizeAsKb("spark.shuffle.file.buffer", "32k").toInt * 1024
@@ -217,7 +218,7 @@ private[spark] class ExternalSorter[K, V, C](
           addElementsRead()
           kv = records.next()
           val pid = getPartition(kv._1)
-          BlockManager.writeRemote(reduceIdToBlockManager.get(pid).slaveEndpoint, shuffleId, pid, kv._1, kv._2)
+          BlockManager.writeRemote(reduceIdToBlockManager.get(pid), shuffleId, pid, kv._1, kv._2)
           map.changeValue((getPartition(kv._1), kv._1), update)
           maybeSpillCollection(usingMap = true)
         }
@@ -234,7 +235,7 @@ private[spark] class ExternalSorter[K, V, C](
           addElementsRead()
           val kv = records.next()
           val pid = getPartition(kv._1)
-          BlockManager.writeRemote(reduceIdToBlockManager.get(pid).slaveEndpoint, shuffleId, pid, kv._1, kv._2)
+          BlockManager.writeRemote(reduceIdToBlockManager.get(pid), shuffleId, pid, kv._1, kv._2)
           buffer.insert(getPartition(kv._1), kv._1, kv._2.asInstanceOf[C])
           maybeSpillCollection(usingMap = false)
         }
@@ -796,8 +797,8 @@ private[spark] class ExternalSorter[K, V, C](
     }
   }
 
-  override def setReduceStatus(ridToInfo: java.util.HashMap[Integer, BlockManagerInfo]): Unit = {
-    reduceIdToBlockManager = new java.util.HashMap[Integer, BlockManagerInfo]()
+  override def setReduceStatus(ridToInfo: java.util.HashMap[Integer, RpcEndpointRef]): Unit = {
+    reduceIdToBlockManager = new java.util.HashMap[Integer, RpcEndpointRef]()
     reduceIdToBlockManager = ridToInfo
   }
 }

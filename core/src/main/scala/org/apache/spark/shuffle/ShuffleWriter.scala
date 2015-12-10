@@ -19,6 +19,7 @@ package org.apache.spark.shuffle
 
 import java.io.IOException
 
+import org.apache.spark.rpc.RpcEndpointRef
 import org.apache.spark.scheduler.MapStatus
 import org.apache.spark.storage.BlockManagerInfo
 import scala.collection.mutable.HashMap
@@ -39,5 +40,5 @@ private[spark] abstract class ShuffleWriter[K, V] {
    * write the record to the remote BlockManager
    * @param records
    */
-  def writeRemote(records: Iterator[Product2[K, V]], reduceIdToBlockManager: HashMap[Int, BlockManagerInfo]): Unit
+  def writeRemote(records: Iterator[Product2[K, V]], reduceIdToBlockManager: HashMap[Int, RpcEndpointRef]): Unit
 }

@@ -180,16 +180,8 @@ private[spark] class BlockManager(
    * @param blockMangerId
    * @return The corresponding BlockInfo of blockManagerId
    */
-  def getRemoteBlockManger(blockMangerId: BlockManagerId): BlockManagerInfo = {
-    val blockInfo:BlockManagerInfo = {
-      master.getRemoteBlockManager(blockManagerId) match {
-        case Some(info) => info
-        case None =>
-          logError(s"frankfzw: The BlockManager with ID ${blockManagerId} doesn't exist!")
-          throw new IllegalArgumentException(s"frankfzw: The BlockManager with ID ${blockManagerId} doesn't exist!")
-      }
-    }
-    blockInfo
+  def getRemoteBlockManager(blockMangerId: BlockManagerId): RpcEndpointRef= {
+   master.getRemoteBlockManager(blockManagerId)
   }
 
   /**
@@ -1418,10 +1410,7 @@ private[spark] object BlockManager extends Logging {
 
   def registerShufflePipe(blockManagerMaster: BlockManagerMaster, shuffleId: Int, reduceStatuses: Array[ReduceStatus]): Boolean = {
     for(rs <- reduceStatuses) {
-      val rpc = blockManagerMaster.getRemoteBlockManager(rs.blockManagerId) match {
-        case Some(info) => info.slaveEndpoint
-        case None => throw new IllegalArgumentException("frankfzw: No such BlockManager with id: " + rs.blockManagerId)
-      }
+      val rpc = blockManagerMaster.getRemoteBlockManager(rs.blockManagerId)
       if (!rpc.askWithRetry[Boolean](RegisterShufflePipe(shuffleId, rs.getTotalMapPartiton(), rs.partition, reduceStatuses.length)))
         return false
     }

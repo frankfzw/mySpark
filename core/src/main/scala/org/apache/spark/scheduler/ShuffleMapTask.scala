@@ -19,6 +19,7 @@ package org.apache.spark.scheduler
 
 import java.nio.ByteBuffer
 
+import org.apache.spark.rpc.RpcEndpointRef
 import org.apache.spark.storage.{BlockManager, BlockManagerInfo, BlockManagerId}
 
 import scala.language.existentials
@@ -63,7 +64,7 @@ private[spark] class ShuffleMapTask(
    */
   private var pipeFlag: Boolean = false
   // private var reduceStatuses: Array[ReduceStatus] = null
-  private var targetBlockManger: HashMap[Int, BlockManagerInfo] = null
+  private var targetBlockManger: HashMap[Int, RpcEndpointRef] = null
 
   def setShuffleId(sId: Int): Unit = {
     shuffleId = sId
@@ -77,9 +78,9 @@ private[spark] class ShuffleMapTask(
     this.getClass.getName
   }
 
-  def setPipeFlag(pIdToBlockManager: HashMap[Int, BlockManagerInfo]): Unit = {
+  def setPipeFlag(pIdToBlockManager: HashMap[Int, RpcEndpointRef]): Unit = {
     pipeFlag = true
-    targetBlockManger = new HashMap[Int, BlockManagerInfo]()
+    targetBlockManger = new HashMap[Int, RpcEndpointRef]()
     targetBlockManger = pIdToBlockManager
     // targetBlockManger.foreach(kv => logInfo(s"frankfzw: Target BlockManger ${kv._1} : ${kv._2.slaveEndpoint.address}"))
   }
@@ -112,11 +113,11 @@ private[spark] class ShuffleMapTask(
       if (pipeFlag) {
         // targetBlockManger.foreach(kv => logInfo(s"frankfzw: Target BlockManger ${kv._1} : ${kv._2.slaveEndpoint.address}"))
         for (kv <- targetBlockManger) {
-          BlockManager.pipeStart(kv._2.slaveEndpoint, shuffleId, partitionId, kv._1)
+          BlockManager.pipeStart(kv._2, shuffleId, partitionId, kv._1)
         }
         writer.writeRemote(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]], targetBlockManger)
         for (kv <- targetBlockManger) {
-          BlockManager.pipeEnd(kv._2.slaveEndpoint, shuffleId, partitionId, kv._1)
+          BlockManager.pipeEnd(kv._2, shuffleId, partitionId, kv._1)
         }
       } else {
         writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])

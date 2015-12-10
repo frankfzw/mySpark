@@ -23,6 +23,8 @@ import java.net.URL
 import java.nio.ByteBuffer
 import java.util.concurrent.{ConcurrentHashMap, TimeUnit}
 
+import org.apache.spark.rpc.RpcEndpointRef
+
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 import scala.util.control.NonFatal
@@ -187,7 +189,7 @@ private[spark] class Executor(
       execBackend.statusUpdate(taskId, TaskState.RUNNING, EMPTY_BYTE_BUFFER)
       var taskStart: Long = 0
       startGCTime = computeTotalGcTime()
-      var reduceIdToBlockManagerInfo:HashMap[Int, BlockManagerInfo] = null
+      var reduceIdToBlockManagerInfo:HashMap[Int, RpcEndpointRef] = null
 
       try {
         val (taskFiles, taskJars, taskBytes) = Task.deserializeWithDependencies(serializedTask)
@@ -208,11 +210,11 @@ private[spark] class Executor(
             val reduceStatuses = env.mapOutputTracker.getReduceStatuses(shuffleId)
             // TODO what if reduceStatuses is null
             if (reduceStatuses != null) {
-              reduceIdToBlockManagerInfo = new HashMap[Int, BlockManagerInfo]()
+              reduceIdToBlockManagerInfo = new HashMap[Int, RpcEndpointRef]()
               reduceStatuses.foreach {
                 rs =>
-                  val blockManagerInfo = env.blockManager.getRemoteBlockManger(rs.blockManagerId)
-                  logInfo(s"frankfzw: The remote BlockManger of ${rs.partition} is ${blockManagerInfo.slaveEndpoint.address}, it has ${rs.getTotalMapPartiton()} partition")
+                  val blockManagerInfo = env.blockManager.getRemoteBlockManager(rs.blockManagerId)
+                  logInfo(s"frankfzw: The remote BlockManger of ${rs.partition} is ${blockManagerInfo.address}, it has ${rs.getTotalMapPartiton()} partition")
                   reduceIdToBlockManagerInfo += (rs.partition -> blockManagerInfo)
               }
               task.asInstanceOf[ShuffleMapTask].setPipeFlag(reduceIdToBlockManagerInfo)

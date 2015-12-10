@@ -47,8 +47,8 @@ class BlockManagerMaster(
    * @param blockManagerId
    * @return
    */
-  def getRemoteBlockManager(blockManagerId: BlockManagerId): Option[BlockManagerInfo] = {
-    driverEndpoint.askWithRetry[Option[BlockManagerInfo]](AskForRemoteBlockManager(blockManagerId))
+  def getRemoteBlockManager(blockManagerId: BlockManagerId): RpcEndpointRef = {
+    driverEndpoint.askWithRetry[RpcEndpointRef](AskForRemoteBlockManager(blockManagerId))
   }
   /**
    * Get the all active BlockManagerId for random allocation

@@ -22,6 +22,7 @@ import java.io.*;
 import java.nio.channels.FileChannel;
 import java.util.Iterator;
 
+import org.apache.spark.rpc.RpcEndpointRef;
 import scala.Option;
 import scala.Product2;
 import scala.collection.JavaConverters;
@@ -74,7 +75,7 @@ public class UnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {
   private final ShuffleMemoryManager shuffleMemoryManager;
 
   @Override
-  public void writeRemote(scala.collection.Iterator<Product2<K, V>> records, HashMap<Object, BlockManagerInfo> reduceIdToBlockManager) {
+  public void writeRemote(scala.collection.Iterator<Product2<K, V>> records, HashMap<Object, RpcEndpointRef> reduceIdToBlockManager) {
 
   }
 
