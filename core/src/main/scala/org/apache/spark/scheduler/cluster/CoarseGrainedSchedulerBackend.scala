@@ -176,6 +176,15 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
         context.reply(sparkProperties)
     }
 
+    def getOffers(): HashSet[String] = {
+      val ret = new HashSet[String]
+      val activeExecutors = executorDataMap.filterKeys(!executorsPendingToRemove.contains(_))
+      // activeExecutors.foreach(x => logInfo(s"frankfzw: Active executors ${x._2.executorHost}"))
+      activeExecutors.keySet.foreach(x => ret += x)
+      ret
+    }
+
+
     // Make fake resource offers on all executors
     private def makeOffers() {
       // Filter out executors under killing

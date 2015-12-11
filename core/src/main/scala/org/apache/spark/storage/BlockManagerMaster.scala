@@ -48,6 +48,7 @@ class BlockManagerMaster(
    * @return
    */
   def getRemoteBlockManager(blockManagerId: BlockManagerId): RpcEndpointRef = {
+    // logInfo(s"frankfzw: Get ${blockManagerId}")
     driverEndpoint.askWithRetry[RpcEndpointRef](AskForRemoteBlockManager(blockManagerId))
   }
   /**

@@ -177,12 +177,14 @@ private[spark] class BlockManager(
 
   /**
    * added by frankfzw
-   * @param blockMangerId
+   * @param bId
    * @return The corresponding BlockInfo of blockManagerId
    */
-  def getRemoteBlockManager(blockMangerId: BlockManagerId): RpcEndpointRef= {
-   master.getRemoteBlockManager(blockManagerId)
+  def getRemoteBlockManager(bId: BlockManagerId): RpcEndpointRef = {
+    logInfo(s"frankfzw: Get ${bId}")
+    master.getRemoteBlockManager(bId)
   }
+
 
   /**
    * added by frankfzw
@@ -194,6 +196,9 @@ private[spark] class BlockManager(
   def remoteWrite(shuffleId: Int, reduceId: Int, key: Any, value: Any): Boolean = {
     // logInfo(s"frankfzw: Receive the remote pushing data of shuffle ${shuffleId} : partition ${reduceId}; ${key} -> ${value}; ${shuffleDataCache(shuffleId).length}")
     val record = (key, value)
+    if (!shuffleDataCache.contains(shuffleId) || shuffleDataCache(shuffleId)(reduceId) == null) {
+      throw new SparkException(s"frankfzw: remoteWrite wrong! id: ${shuffleId}; reduceID: ${reduceId}; cache: ${shuffleDataCache.keySet}; array buffer: ${shuffleDataCache.values}")
+    }
     shuffleDataCache(shuffleId)(reduceId) += record
     true
   }
@@ -219,6 +224,7 @@ private[spark] class BlockManager(
       shuffleCacheStatus += (shuffleId -> countDownLatchArray)
       val cacheArray = new Array[ArrayBuffer[(Any, Any)]](totalReducePartition)
       shuffleDataCache += (shuffleId -> cacheArray.map(x => new ArrayBuffer[(Any, Any)]()))
+      logInfo(s"frankfzw: Shuffle registerd: id: ${shuffleId}, reduce partition: ${reducePartition}, lock: ${shuffleCacheStatus(shuffleId)(reducePartition)}, buffer: ${shuffleDataCache(shuffleId)(reducePartition)}")
     }
     // logError("frankfzw: This shuffle was registered before !")
     true
@@ -1411,8 +1417,11 @@ private[spark] object BlockManager extends Logging {
   def registerShufflePipe(blockManagerMaster: BlockManagerMaster, shuffleId: Int, reduceStatuses: Array[ReduceStatus]): Boolean = {
     for(rs <- reduceStatuses) {
       val rpc = blockManagerMaster.getRemoteBlockManager(rs.blockManagerId)
-      if (!rpc.askWithRetry[Boolean](RegisterShufflePipe(shuffleId, rs.getTotalMapPartiton(), rs.partition, reduceStatuses.length)))
-        return false
+      logInfo(s"frankfzw: registerShufflePipe id: ${shuffleId}; target blockmanager ${rs.blockManagerId}; total map: ${rs.getTotalMapPartiton()}; total reduce: ${reduceStatuses.length}; reduce id: ${rs.partition}")
+      // if (!rpc.askWithRetry[Boolean](RegisterShufflePipe(shuffleId, rs.getTotalMapPartiton(), rs.partition, reduceStatuses.length)))
+      //   throw new SparkException(s"frankfzw: RegisterShufflePipe faild: id: ${shuffleId}; target blockmanager ${rs.blockManagerId}; total map: ${rs.getTotalMapPartiton()}; total reduce: ${reduceStatuses.length}; reduce id: ${rs.partition}")
+      //   return false
+      rpc.askWithRetry[Boolean](RegisterShufflePipe(shuffleId, rs.getTotalMapPartiton(), rs.partition, reduceStatuses.length))
     }
     true
   }

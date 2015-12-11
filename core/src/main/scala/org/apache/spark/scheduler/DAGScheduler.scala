@@ -1005,7 +1005,9 @@ class DAGScheduler(
               dep match {
                 case shufDep: ShuffleDependency[_, _, _] =>
                   if (shufDep.shuffleId != -1) {
-                    reduceStatuses.foreach(rs => rs.setTotalMapPartition(dep.rdd.partitions.length))
+                    for (i <- 0 until reduceStatuses.length) {
+                      reduceStatuses(i).setTotalMapPartition(dep.rdd.partitions.length)
+                    }
                     BlockManager.registerShufflePipe(blockManagerMaster, shufDep.shuffleId, reduceStatuses)
                     mapOutputTracker.registerPendingReduce(shufDep.shuffleId, reduceStatuses)
                   }
@@ -1619,11 +1621,12 @@ class DAGScheduler(
     val res = new mutable.HashMap[Int, Seq[TaskLocation]]()
     val reduceStatuses = ArrayBuffer.empty[ReduceStatus]
     val blockManagerList = blockManagerMaster.getBlockManagerList()
+    val finalList = blockManagerList.filter(bId => bId.executorId != "driver")
     for (p <- partitionToCompute) {
-      val location = Seq[String](blockManagerList(p % blockManagerList.length).host)
+      val location = Seq[String](finalList(p % finalList.length).host)
       val taskLocation = location.map(TaskLocation(_))
       res.put(p, taskLocation)
-      val reduceStatus = new ReduceStatus(p, blockManagerList(p % blockManagerList.length))
+      val reduceStatus = new ReduceStatus(p, finalList(p % finalList.length))
       reduceStatuses += reduceStatus
     }
     return (res, reduceStatuses.toArray)

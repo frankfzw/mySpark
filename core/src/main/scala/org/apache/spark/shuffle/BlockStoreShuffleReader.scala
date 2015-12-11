@@ -56,7 +56,7 @@ private[spark] class BlockStoreShuffleReader[K, C](
 
     if (blockManager.isCached(handle.shuffleId)) {
       fromCache = true
-      logInfo("frankfzw: Reading from local cache")
+      logInfo(s"frankfzw: Reading from local cache, shuffleId is ${handle.shuffleId}, startPartition: ${startPartition}, endPartition: ${endPartition}")
       val bufferArray = new Array[ArrayBuffer[(Any, Any)]](endPartition - startPartition)
       val lockArray = new Array[CountDownLatch](endPartition - startPartition)
       for (p <- startPartition until endPartition) {
@@ -71,6 +71,12 @@ private[spark] class BlockStoreShuffleReader[K, C](
           if (index == (endPartition - startPartition)) {
             // generate the IndexOutOfBoundsException here
             bufferArray(0)(bufferArray.length)
+          }
+          if (lockArray(index) == null) {
+            throw new NullPointerException(s"frankfzw: The partition ${index} is not registered")
+          }
+          if (bufferArray(index) == null) {
+            throw new NullPointerException(s"frankfzw: The cache of partition ${index} is null")
           }
           if (lockArray(index).getCount != 0 || bufferArray(index).length != 0) {
             breakable{

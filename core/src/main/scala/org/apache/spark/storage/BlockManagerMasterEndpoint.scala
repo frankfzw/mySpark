@@ -150,8 +150,10 @@ class BlockManagerMasterEndpoint(
    * @return Option[BlockManagerInfo]
    */
   private def getRemoteBlockManager(blockMangerId: BlockManagerId): RpcEndpointRef= {
-    if (blockManagerInfo.contains(blockMangerId))
+    if (blockManagerInfo.contains(blockMangerId)) {
+      logInfo(s"frankfzw: Ask for remote ${blockMangerId} --> return ${blockManagerInfo(blockMangerId).slaveEndpoint}")
       return blockManagerInfo(blockMangerId).slaveEndpoint
+    }
     else
       throw new IllegalArgumentException(s"Missing ${blockMangerId.executorId}")
   }
