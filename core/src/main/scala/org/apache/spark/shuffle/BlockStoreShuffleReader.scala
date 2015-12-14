@@ -56,7 +56,7 @@ private[spark] class BlockStoreShuffleReader[K, C](
 
     if (blockManager.isCached(handle.shuffleId)) {
       fromCache = true
-      logInfo(s"frankfzw: Reading from local cache, shuffleId is ${handle.shuffleId}, startPartition: ${startPartition}, endPartition: ${endPartition}")
+      // logInfo(s"frankfzw: Reading from local cache, shuffleId is ${handle.shuffleId}, startPartition: ${startPartition}, endPartition: ${endPartition}")
       val bufferArray = new Array[ArrayBuffer[(Any, Any)]](endPartition - startPartition)
       val lockArray = new Array[CountDownLatch](endPartition - startPartition)
       for (p <- startPartition until endPartition) {

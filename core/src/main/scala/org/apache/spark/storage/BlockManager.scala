@@ -213,7 +213,7 @@ private[spark] class BlockManager(
    * @return
    */
   def registerShufflePipe(shuffleId: Int, totalMapPartiton: Int, reducePartition: Int, totalReducePartition: Int): Boolean = {
-    logInfo(s"frankfzw: Register shuffle, shuffle ID: ${shuffleId}; total map partition ${totalMapPartiton}; total reduce partition: ${totalReducePartition}; target reduce partition: ${reducePartition}")
+    // logInfo(s"frankfzw: Register shuffle, shuffle ID: ${shuffleId}; total map partition ${totalMapPartiton}; total reduce partition: ${totalReducePartition}; target reduce partition: ${reducePartition}")
     if (shuffleCacheStatus.contains(shuffleId)) {
       val countDownLatch = new CountDownLatch(totalMapPartiton)
       shuffleCacheStatus(shuffleId)(reducePartition) = countDownLatch
@@ -224,7 +224,7 @@ private[spark] class BlockManager(
       shuffleCacheStatus += (shuffleId -> countDownLatchArray)
       val cacheArray = new Array[ArrayBuffer[(Any, Any)]](totalReducePartition)
       shuffleDataCache += (shuffleId -> cacheArray.map(x => new ArrayBuffer[(Any, Any)]()))
-      logInfo(s"frankfzw: Shuffle registerd: id: ${shuffleId}, reduce partition: ${reducePartition}, lock: ${shuffleCacheStatus(shuffleId)(reducePartition)}, buffer: ${shuffleDataCache(shuffleId)(reducePartition)}")
+      // logInfo(s"frankfzw: Shuffle registerd: id: ${shuffleId}, reduce partition: ${reducePartition}, lock: ${shuffleCacheStatus(shuffleId)(reducePartition)}, buffer: ${shuffleDataCache(shuffleId)(reducePartition)}")
     }
     // logError("frankfzw: This shuffle was registered before !")
     true
@@ -252,7 +252,7 @@ private[spark] class BlockManager(
       shuffleCacheStatus(shuffleId)(reducePartition).await()
       shuffleDataCache(shuffleId)(reducePartition)
     }(futureExecutionContext)
-    logInfo(s"frankfzw: Return the Future with ${shuffleId}:${reducePartition}")
+    // logInfo(s"frankfzw: Return the Future with ${shuffleId}:${reducePartition}")
     return res
   }
 

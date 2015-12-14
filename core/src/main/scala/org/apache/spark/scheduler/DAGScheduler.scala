@@ -953,7 +953,7 @@ class DAGScheduler(
   /** Called when stage's parents are available and we can now do its task. */
   private def submitMissingTasks(stage: Stage, jobId: Int) {
     logDebug("submitMissingTasks(" + stage + ")")
-    logInfo("frankfzw: submitMissingTasks( " + stage + " )")
+    // logInfo("frankfzw: submitMissingTasks( " + stage + " )")
     // Get our pending tasks and remember them in our pendingTasks entry
     stage.pendingPartitions.clear()
 
@@ -972,7 +972,7 @@ class DAGScheduler(
       }
     }
 
-    logInfo("frankfzw: stage " + stage + " all partition number " + allPartitions.length + " partition to computer " + partitionsToCompute.length)
+    // logInfo("frankfzw: stage " + stage + " all partition number " + allPartitions.length + " partition to computer " + partitionsToCompute.length)
     // Create internal accumulators if the stage has no accumulators initialized.
     // Reset internal accumulators only if this stage is not partially submitted
     // Otherwise, we may override existing accumulator values from some tasks
@@ -993,7 +993,7 @@ class DAGScheduler(
     val taskIdToLocations = {
       if (stage.PENDING) {
         // partitionsToCompute.map {id => (id, getRandomLocs(stage.rdd, id))}.toMap
-        logInfo(s"frankfzw: submit pending stage: ${stage} ${stage.getClass} rdd is ${stage.rdd} partition to compute: ${partitionsToCompute.length}")
+        // logInfo(s"frankfzw: submit pending stage: ${stage} ${stage.getClass} rdd is ${stage.rdd} partition to compute: ${partitionsToCompute.length}")
         val (idToLoaction: Map[Int, Seq[TaskLocation]], reduceStatuses: Array[ReduceStatus]) = getRandomLocs(stage.id, partitionsToCompute.toList)
         // frankfzw: Get the shuffle dependency of the rdd on the corresponding stage border
         val visited = new HashSet[RDD[_]]
@@ -1054,7 +1054,7 @@ class DAGScheduler(
           }
         } catch {
           case NonFatal(e) =>
-            logInfo("frankfzw: submitMissingTasks task creation failed on stage " + stage)
+            logError("frankfzw: submitMissingTasks task creation failed on stage " + stage)
             stage.makeNewStageAttempt(partitionsToCompute.size)
             listenerBus.post(SparkListenerStageSubmitted(stage.latestInfo, properties))
             abortStage(stage, s"Task creation failed: $e\n${e.getStackTraceString}", Some(e))
@@ -1159,7 +1159,7 @@ class DAGScheduler(
           s"Stage ${stage} is actually done; (partitions: ${stage.numPartitions})"
       }
       logDebug(debugString)
-      logInfo(s"frankfzw: ${debugString}")
+      // logDebug(s"frankfzw: ${debugString}")
     }
   }
 

@@ -114,7 +114,7 @@ final class BypassMergeSortShuffleWriter<K, V> implements SortShuffleFileWriter<
     // logger.info("frankfzw: I'm insertAll with records " + records.size());
     assert (partitionWriters == null);
     if (!records.hasNext()) {
-      logger.info("frankfzw: The records are empty");
+      // logger.info("frankfzw: The records are empty");
       return;
     }
     final SerializerInstance serInstance = serializer.newInstance();
@@ -162,7 +162,7 @@ final class BypassMergeSortShuffleWriter<K, V> implements SortShuffleFileWriter<
     // logger.info("frankfzw: I'm insertAll with records " + records.size());
     assert (partitionWriters == null);
     if (!records.hasNext()) {
-      logger.info("frankfzw: The records are empty");
+      // logger.info("frankfzw: The records are empty");
       return;
     }
     final SerializerInstance serInstance = serializer.newInstance();

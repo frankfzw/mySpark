@@ -206,7 +206,7 @@ private[spark] class Executor(
           val shuffleId = task.asInstanceOf[ShuffleMapTask].getShuffleId()
           if (shuffleId != -1) {
             // TODO
-            logInfo(s"frankfzw: task: ${task}; shuffleId: ${shuffleId}")
+            // logInfo(s"frankfzw: task: ${task}; shuffleId: ${shuffleId}")
             val reduceStatuses = env.mapOutputTracker.getReduceStatuses(shuffleId)
             // TODO what if reduceStatuses is null
             if (reduceStatuses != null) {
@@ -220,7 +220,7 @@ private[spark] class Executor(
               var blockManagerInfo: RpcEndpointRef = null
               for (rs <- reduceStatuses) {
                 blockManagerInfo = env.blockManager.getRemoteBlockManager(rs.blockManagerId)
-                logInfo(s"frankfzw: Task ${taskId}: The remote BlockManger ID: ${rs.blockManagerId}; reduce ID: ${rs.partition} is ${blockManagerInfo.address}, it has ${rs.getTotalMapPartiton()} partition")
+                // logInfo(s"frankfzw: Task ${taskId}: The remote BlockManger ID: ${rs.blockManagerId}; reduce ID: ${rs.partition} is ${blockManagerInfo.address}, it has ${rs.getTotalMapPartiton()} partition")
                 reduceIdToBlockManagerInfo += (rs.partition -> blockManagerInfo)
               }
               task.asInstanceOf[ShuffleMapTask].setPipeFlag(reduceIdToBlockManagerInfo)
