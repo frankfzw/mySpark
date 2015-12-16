@@ -95,12 +95,20 @@ class ShuffledRDD[K: ClassTag, V: ClassTag, C: ClassTag](
   override def compute(split: Partition, context: TaskContext): Iterator[(K, C)] = {
     val dep = dependencies.head.asInstanceOf[ShuffleDependency[K, V, C]]
     // frankfzw: keep it waiting until the previous ShuffleMapStage finishes
-    var time = 0
-    while (SparkEnv.get.shuffleManager.getReader(dep.shuffleHandle, split.index, split.index + 1, context).read() == null) {
-      Thread.sleep(50)
-      time = time + 1
-      logInfo("frankfzw: Map partion " + split + " is not ready, waiting for " + time * 50 + " milliseconds")
-    }
+    // var time = 0
+    // while (SparkEnv.get.shuffleManager.getReader(dep.shuffleHandle, split.index, split.index + 1, context).read() == null) {
+    //   Thread.sleep(50)
+    //   time = time + 1
+    //   logInfo("frankfzw: Map partion " + split + " is not ready, waiting for " + time * 50 + " milliseconds")
+    // }
+    // val it = SparkEnv.get.shuffleManager.getReader(dep.shuffleHandle, split.index, split.index + 1, context)
+    //   .read()
+    //   .asInstanceOf[Iterator[(K, C)]]
+    // while (it.hasNext) {
+    //   val kv = it.next()
+    //   println(s"frankfzw: The kv is ${kv}")
+    // }
+    // it
     SparkEnv.get.shuffleManager.getReader(dep.shuffleHandle, split.index, split.index + 1, context)
       .read()
       .asInstanceOf[Iterator[(K, C)]]

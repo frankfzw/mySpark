@@ -903,8 +903,7 @@ class DAGScheduler(
     submitWaitingStages()
   }
 
-  /** Submits stage, but first recursively submits any missing parents. */
-  private def submitStage(stage: Stage) {
+  /** Submits stage, but first recursively submits any missing parents. */ private def submitStage(stage: Stage) {
     val jobId = activeJobForStage(stage)
     if (jobId.isDefined) {
       logDebug("submitStage(" + stage + ")")
@@ -917,6 +916,9 @@ class DAGScheduler(
           submitMissingTasks(stage, jobId.get)
           for (parent <- missing)
             submitStage(parent)
+          // waitingStages += stage
+          // for (parent <- missing)
+          //   submitStage(parent)
         }
         // logDebug("missing: " + missing)
         // if (missing.isEmpty) {
@@ -1621,7 +1623,8 @@ class DAGScheduler(
     val res = new mutable.HashMap[Int, Seq[TaskLocation]]()
     val reduceStatuses = ArrayBuffer.empty[ReduceStatus]
     val blockManagerList = blockManagerMaster.getBlockManagerList()
-    val finalList = blockManagerList.filter(bId => bId.executorId != "driver")
+    // val finalList = blockManagerList.filter(bId => bId.executorId != "driver")
+    val finalList = blockManagerList
     for (p <- partitionToCompute) {
       val location = Seq[String](finalList(p % finalList.length).host)
       val taskLocation = location.map(TaskLocation(_))

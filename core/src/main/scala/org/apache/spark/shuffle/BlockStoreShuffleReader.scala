@@ -56,7 +56,7 @@ private[spark] class BlockStoreShuffleReader[K, C](
 
     if (blockManager.isCached(handle.shuffleId)) {
       fromCache = true
-      // logInfo(s"frankfzw: Reading from local cache, shuffleId is ${handle.shuffleId}, startPartition: ${startPartition}, endPartition: ${endPartition}")
+      logInfo(s"frankfzw: Reading from local cache, shuffleId is ${handle.shuffleId}, startPartition: ${startPartition}, endPartition: ${endPartition}")
       val bufferArray = new Array[ArrayBuffer[(Any, Any)]](endPartition - startPartition)
       val lockArray = new Array[CountDownLatch](endPartition - startPartition)
       for (p <- startPartition until endPartition) {
@@ -66,7 +66,6 @@ private[spark] class BlockStoreShuffleReader[K, C](
       }
       val cache = new NextIterator[(Any, Any)] {
         var i = 0
-
         private def getKV(index: Int): (Any, Any) = {
           if (index == (endPartition - startPartition)) {
             // generate the IndexOutOfBoundsException here
@@ -93,6 +92,9 @@ private[spark] class BlockStoreShuffleReader[K, C](
           }
           null
         }
+
+        def getBuffer(): Array[ArrayBuffer[(Any, Any)]] = bufferArray
+        def getLock(): Array[CountDownLatch] = lockArray
 
         override protected def getNext() = {
           try {
@@ -163,12 +165,14 @@ private[spark] class BlockStoreShuffleReader[K, C](
       if (dep.mapSideCombine && !fromCache) {
         // We are reading values that are already combined
         // added by frankfzw: make sure these key-value pairs are not read from local cache
+        logInfo("frankfzw: This shuffle has combined by mapper and it doesn't readed from cache")
         val combinedKeyValuesIterator = interruptibleIter.asInstanceOf[Iterator[(K, C)]]
         dep.aggregator.get.combineCombinersByKey(combinedKeyValuesIterator, context)
       } else {
         // We don't know the value type, but also don't care -- the dependency *should*
         // have made sure its compatible w/ this aggregator, which will convert the value
         // type to the combined type C
+        logInfo("frankfzw: This shuffle hasn't be combined or it's from cache")
         val keyValuesIterator = interruptibleIter.asInstanceOf[Iterator[(K, Nothing)]]
         dep.aggregator.get.combineValuesByKey(keyValuesIterator, context)
       }
@@ -177,9 +181,14 @@ private[spark] class BlockStoreShuffleReader[K, C](
       interruptibleIter.asInstanceOf[Iterator[Product2[K, C]]]
     }
 
+    // while (aggregatedIter.hasNext) {
+    //   val kv = aggregatedIter.next()
+    //   logInfo(s"frankfzw: The kv is ${kv._1} -> ${kv._2}")
+    // }
     // Sort the output if there is a sort ordering defined.
     dep.keyOrdering match {
       case Some(keyOrd: Ordering[K]) =>
+        logInfo("frankfzw: It has external order")
         // Create an ExternalSorter to sort the data. Note that if spark.shuffle.spill is disabled,
         // the ExternalSorter won't spill to disk.
         val sorter = new ExternalSorter[K, C, C](ordering = Some(keyOrd), serializer = Some(ser))
@@ -191,6 +200,11 @@ private[spark] class BlockStoreShuffleReader[K, C](
           InternalAccumulator.PEAK_EXECUTION_MEMORY).add(sorter.peakMemoryUsedBytes)
         sorter.iterator
       case None =>
+        logInfo("frankfzw: It doesn't have external order")
+        while (recordIter.hasNext) {
+          val kv = recordIter.next()
+          logInfo(s"frankfzw: The kv is ${kv._1} -> ${kv._2}")
+        }
         aggregatedIter
     }
 

@@ -181,7 +181,7 @@ private[spark] class BlockManager(
    * @return The corresponding BlockInfo of blockManagerId
    */
   def getRemoteBlockManager(bId: BlockManagerId): RpcEndpointRef = {
-    logInfo(s"frankfzw: Get ${bId}")
+    // logInfo(s"frankfzw: Get ${bId}")
     master.getRemoteBlockManager(bId)
   }
 

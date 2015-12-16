@@ -209,7 +209,7 @@ private[spark] class Executor(
             // logInfo(s"frankfzw: task: ${task}; shuffleId: ${shuffleId}")
             val reduceStatuses = env.mapOutputTracker.getReduceStatuses(shuffleId)
             // TODO what if reduceStatuses is null
-            if (reduceStatuses != null) {
+            if (reduceStatuses != null && reduceStatuses.length != 0) {
               reduceIdToBlockManagerInfo = new HashMap[Int, RpcEndpointRef]()
               // reduceStatuses.foreach {
               //   rs =>
