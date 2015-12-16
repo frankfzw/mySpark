@@ -1623,8 +1623,8 @@ class DAGScheduler(
     val res = new mutable.HashMap[Int, Seq[TaskLocation]]()
     val reduceStatuses = ArrayBuffer.empty[ReduceStatus]
     val blockManagerList = blockManagerMaster.getBlockManagerList()
-    // val finalList = blockManagerList.filter(bId => bId.executorId != "driver")
-    val finalList = blockManagerList
+    val finalList = blockManagerList.filter(bId => bId.executorId != "driver")
+    // val finalList = blockManagerList
     for (p <- partitionToCompute) {
       val location = Seq[String](finalList(p % finalList.length).host)
       val taskLocation = location.map(TaskLocation(_))
