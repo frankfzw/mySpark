@@ -57,53 +57,17 @@ private[spark] class BlockStoreShuffleReader[K, C](
     if (blockManager.isCached(handle.shuffleId)) {
       fromCache = true
       logInfo(s"frankfzw: Reading from local cache, shuffleId is ${handle.shuffleId}, startPartition: ${startPartition}, endPartition: ${endPartition}")
-      val bufferArray = new Array[ArrayBuffer[(Any, Any)]](endPartition - startPartition)
-      val lockArray = new Array[CountDownLatch](endPartition - startPartition)
+      val bufferArray = new ArrayBuffer[(Any, Any)]()
       for (p <- startPartition until endPartition) {
-        val (buffer, lock) = blockManager.getCacheWithLock(handle.shuffleId, p)
-        bufferArray(p - startPartition) = buffer
-        lockArray(p - startPartition) = lock
+        val buffer = blockManager.getCache(handle.shuffleId, p)
+        bufferArray ++= buffer
       }
       val cache = new NextIterator[(Any, Any)] {
         var i = 0
-        private def getKV(index: Int): (Any, Any) = {
-          if (index == (endPartition - startPartition)) {
-            // generate the IndexOutOfBoundsException here
-            bufferArray(0)(bufferArray.length)
-          }
-          if (lockArray(index) == null) {
-            throw new NullPointerException(s"frankfzw: The partition ${index} is not registered")
-          }
-          if (bufferArray(index) == null) {
-            throw new NullPointerException(s"frankfzw: The cache of partition ${index} is null")
-          }
-          if (lockArray(index).getCount != 0 || bufferArray(index).length != 0) {
-            breakable{
-              while (bufferArray(index).length == 0) {
-                if (bufferArray(index).length != 0 || lockArray(index).getCount == 0)
-                  break
-              }
-            }
-            if (bufferArray(index).length !=0 ) {
-              val kv = bufferArray(index)(0)
-              bufferArray(index) -= kv
-              return kv
-            }
-          }
-          null
-        }
-
-        def getBuffer(): Array[ArrayBuffer[(Any, Any)]] = bufferArray
-        def getLock(): Array[CountDownLatch] = lockArray
-
         override protected def getNext() = {
           try {
-            var kv: (Any, Any) = getKV(i)
-            while (kv == null) {
-              i = i + 1
-              kv = getKV(i)
-            }
-            // logInfo(s"frankfzw: got kv pair ${kv}")
+            val kv: (Any, Any) = bufferArray(0)
+            bufferArray -= kv
             kv
           } catch {
             case eof: IndexOutOfBoundsException => {
@@ -114,8 +78,7 @@ private[spark] class BlockStoreShuffleReader[K, C](
         }
 
         override  protected def close(): Unit = {
-          for(b <- bufferArray)
-            b.clear()
+          bufferArray.clear()
         }
       }
 
@@ -201,10 +164,10 @@ private[spark] class BlockStoreShuffleReader[K, C](
         sorter.iterator
       case None =>
         logInfo("frankfzw: It doesn't have external order")
-        while (recordIter.hasNext) {
-          val kv = recordIter.next()
-          logInfo(s"frankfzw: The kv is ${kv._1} -> ${kv._2}")
-        }
+        // while (recordIter.hasNext) {
+        //   val kv = recordIter.next()
+        //   logInfo(s"frankfzw: The kv is ${kv._1} -> ${kv._2}")
+        // }
         aggregatedIter
     }
 

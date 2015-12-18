@@ -218,7 +218,10 @@ private[spark] class ExternalSorter[K, V, C](
           addElementsRead()
           kv = records.next()
           val pid = getPartition(kv._1)
-          BlockManager.writeRemote(reduceIdToBlockManager.get(pid), shuffleId, pid, kv._1, kv._2)
+          if (reduceIdToBlockManager.containsKey(pid))
+            BlockManager.writeRemote(reduceIdToBlockManager.get(pid), shuffleId, pid, kv._1, kv._2)
+          else
+            logInfo(s"frankfzw: No such reducer id ${pid}")
           map.changeValue((getPartition(kv._1), kv._1), update)
           maybeSpillCollection(usingMap = true)
         }

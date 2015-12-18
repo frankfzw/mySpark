@@ -145,7 +145,10 @@ final class BypassMergeSortShuffleWriter<K, V> implements SortShuffleFileWriter<
 
         int pid = partitioner.getPartition(key);
         // frankfzw: It may cause an null exception
-        BlockManager.writeRemote(reduceIdToBlockManager.get(pid), shuffleId, pid, key, record._2());
+        if (reduceIdToBlockManager.containsKey(pid))
+          BlockManager.writeRemote(reduceIdToBlockManager.get(pid), shuffleId, pid, key, record._2());
+        else
+          logger.info("frankfzw: No such reducer id " + pid);
       }
     } else {
       logger.error("frankfzw: Unable to insert remote");

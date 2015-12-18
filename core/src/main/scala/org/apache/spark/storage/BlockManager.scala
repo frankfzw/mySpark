@@ -172,8 +172,8 @@ private[spark] class BlockManager(
   private lazy val compressionCodec: CompressionCodec = CompressionCodec.createCodec(conf)
 
   // added by frankfzw, cache the shuffle data
-  private val shuffleDataCache: TrieMap[Int, Array[ArrayBuffer[(Any, Any)]]] = new TrieMap
-  private val shuffleCacheStatus: TrieMap[Int, Array[CountDownLatch]] = new TrieMap
+  private val shuffleDataCache: HashMap[Int, Array[ArrayBuffer[(Any, Any)]]] = new HashMap
+  // private val shuffleCacheStatus: Hash[Int, Array[CountDownLatch]] = new HashMap
 
   /**
    * added by frankfzw
@@ -214,14 +214,7 @@ private[spark] class BlockManager(
    */
   def registerShufflePipe(shuffleId: Int, totalMapPartiton: Int, reducePartition: Int, totalReducePartition: Int): Boolean = {
     // logInfo(s"frankfzw: Register shuffle, shuffle ID: ${shuffleId}; total map partition ${totalMapPartiton}; total reduce partition: ${totalReducePartition}; target reduce partition: ${reducePartition}")
-    if (shuffleCacheStatus.contains(shuffleId)) {
-      val countDownLatch = new CountDownLatch(totalMapPartiton)
-      shuffleCacheStatus(shuffleId)(reducePartition) = countDownLatch
-    } else {
-      val countDownLatch = new CountDownLatch(totalMapPartiton)
-      val countDownLatchArray = new Array[CountDownLatch](totalReducePartition)
-      countDownLatchArray(reducePartition) = countDownLatch
-      shuffleCacheStatus += (shuffleId -> countDownLatchArray)
+    if (!shuffleDataCache.contains(shuffleId)) {
       val cacheArray = new Array[ArrayBuffer[(Any, Any)]](totalReducePartition)
       shuffleDataCache += (shuffleId -> cacheArray.map(x => new ArrayBuffer[(Any, Any)]()))
       // logInfo(s"frankfzw: Shuffle registerd: id: ${shuffleId}, reduce partition: ${reducePartition}, lock: ${shuffleCacheStatus(shuffleId)(reducePartition)}, buffer: ${shuffleDataCache(shuffleId)(reducePartition)}")
@@ -237,7 +230,7 @@ private[spark] class BlockManager(
    * @return
    */
   def isCached(shuffleId: Int): Boolean = {
-    shuffleCacheStatus.contains(shuffleId)
+    shuffleDataCache.contains(shuffleId)
   }
 
   /**
@@ -247,17 +240,17 @@ private[spark] class BlockManager(
    * @param shuffleId
    * @return
    */
-  def getCache(shuffleId: Int, reducePartition: Int): Future[ArrayBuffer[(Any, Any)]] = {
-    val res = Future[ArrayBuffer[(Any, Any)]] {
-      shuffleCacheStatus(shuffleId)(reducePartition).await()
-      shuffleDataCache(shuffleId)(reducePartition)
-    }(futureExecutionContext)
-    // logInfo(s"frankfzw: Return the Future with ${shuffleId}:${reducePartition}")
-    return res
-  }
+  // def getCache(shuffleId: Int, reducePartition: Int): Future[ArrayBuffer[(Any, Any)]] = {
+  //   val res = Future[ArrayBuffer[(Any, Any)]] {
+  //     shuffleCacheStatus(shuffleId)(reducePartition).await()
+  //     shuffleDataCache(shuffleId)(reducePartition)
+  //   }(futureExecutionContext)
+  //   // logInfo(s"frankfzw: Return the Future with ${shuffleId}:${reducePartition}")
+  //   return res
+  // }
 
-  def getCacheWithLock(shuffleId: Int, reducePartition: Int): (ArrayBuffer[(Any, Any)], CountDownLatch) = {
-    (shuffleDataCache(shuffleId)(reducePartition), shuffleCacheStatus(shuffleId)(reducePartition))
+  def getCache(shuffleId: Int, reducePartition: Int): ArrayBuffer[(Any, Any)] = {
+    shuffleDataCache(shuffleId)(reducePartition)
   }
   /**
    * added by frankfzw
@@ -280,7 +273,7 @@ private[spark] class BlockManager(
    */
   def pipeEnd(shuffleId: Int, mapPartition: Int, reducePartition: Int): Boolean = {
     logInfo(s"frankfzw: The map partition ${mapPartition} of shuffle ${shuffleId} for reduce partition ${reducePartition} was finished")
-    shuffleCacheStatus(shuffleId)(reducePartition).countDown()
+    // shuffleCacheStatus(shuffleId)(reducePartition).countDown()
     true
   }
   /**

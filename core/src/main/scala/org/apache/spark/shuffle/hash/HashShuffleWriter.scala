@@ -94,9 +94,8 @@ private[spark] class HashShuffleWriter[K, V](
       shuffle.writers(bucketId).write(elem._1, elem._2)
       val res = reduceIdToBlockManager.get(bucketId) match {
         case Some(info) => BlockManager.writeRemote(info, dep.shuffleId, bucketId, elem._1, elem._2)
-        case None =>
-          logError(s"frankfzw: No such reducer id ${bucketId}")
-          throw new IllegalArgumentException(s"frankfzw: No such reducer id ${bucketId}")
+        case _ =>
+          logInfo(s"frankfzw: No such reducer id ${bucketId}")
       }
 
       if (res == false) {
