@@ -24,25 +24,21 @@ import org.apache.spark.storage.BlockManagerId
 /**
  * Created by frankfzw on 15-11-9.
  */
-private[spark] class ReduceStatus (p: Int, bId: BlockManagerId) extends Externalizable{
+private[spark] class ReduceStatus(var partition: Int, var executorId: String) extends Externalizable{
 
-  var partition = p
-  var blockManagerId = bId
   private var totalMapPartition:Int = 0;
 
   protected def this() = this(0, null)
 
   override def readExternal(in: ObjectInput): Unit = {
-    blockManagerId = BlockManagerId(in)
-    // blockManagerId.readExternal(in)
     partition = in.readInt()
+    executorId = in.readUTF()
     totalMapPartition = in.readInt()
   }
 
   override def writeExternal(out: ObjectOutput): Unit = {
-    blockManagerId.writeExternal(out)
-    // blockManagerId.writeExternal(out)
     out.writeInt(partition)
+    out.writeUTF(executorId)
     out.writeInt(totalMapPartition)
   }
 

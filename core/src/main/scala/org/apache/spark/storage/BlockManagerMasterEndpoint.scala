@@ -132,6 +132,10 @@ class BlockManagerMasterEndpoint(
       //added by frankfzw to fetch the remote blockManager
     case AskForRemoteBlockManager(blockManagerId) =>
       context.reply(getRemoteBlockManager(blockManagerId))
+
+    // added by BeforeRain to fetch block manager info
+    case AskForRemoteBlockManagerInfo(executorId) =>
+      context.reply(getRemoteBlockManagerInfo(executorId))
   }
 
   /**
@@ -156,6 +160,27 @@ class BlockManagerMasterEndpoint(
     }
     else
       throw new IllegalArgumentException(s"Missing ${blockMangerId.executorId}")
+  }
+
+  /**
+   * added by BeforeRain
+   * Look up BlockManagerInfo for a given executor 
+   * @param executorId
+   * @return BlockManagerInfo
+   */
+  private def getRemoteBlockManagerInfo(executorId: String): BlockManagerInfo = {
+    if (blockManagerIdByExecutor.contains(executorId)) {
+      val blockManagerId = blockManagerIdByExecutor(executorId)
+      if (blockManagerInfo.contains(blockManagerId)) {
+        val info = blockManagerInfo(blockManagerId)
+        logInfo(s"getRemoteBlockManagerInfo: executorId: ${executorId}, blockManagerId: ${blockManagerId}, blockManagerInfo: ${info}")
+        info
+      } else {
+        throw new IllegalArgumentException(s"Missing blockManagerId ${blockManagerId} in blockManagerInfo")
+      }
+    } else {
+      throw new IllegalArgumentException(s"Missing executorId ${executorId} in blockManagerIdByExecutor")
+    }
   }
 
   private def removeRdd(rddId: Int): Future[Seq[Int]] = {
@@ -456,7 +481,7 @@ private[spark] class BlockManagerInfo(
     timeMs: Long,
     val maxMem: Long,
     val slaveEndpoint: RpcEndpointRef)
-  extends Logging {
+  extends Logging with Serializable {
 
   private var _lastSeenMs: Long = timeMs
   private var _remainingMem: Long = maxMem

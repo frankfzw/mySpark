@@ -284,7 +284,7 @@ private[spark] abstract class MapOutputTracker(conf: SparkConf) extends Logging 
       if (fetchedStatuses != null) {
         logInfo(s"frankfzw: Got the reduce locations for shuffle ${shuffleId}")
         for (s <- fetchedStatuses)
-          logInfo(s"frankfzw: ShuffleId: ${shuffleId}; reduceId: ${s.partition}; blockmanager: ${s.blockManagerId}")
+          logInfo(s"frankfzw: ShuffleId: ${shuffleId}; reduceId: ${s.partition}; executorId: ${s.executorId}")
         return fetchedStatuses
       } else {
         logInfo(s"frankfzw: Missing all reduce locations for shuffle ${shuffleId}. Is it because there is no pending stage?")
@@ -435,7 +435,7 @@ private[spark] class MapOutputTrackerMaster(conf: SparkConf)
     } else {
       logInfo("frankfzw: register shuffle " + shuffleId + " with statuses " + statuses.length)
       for(s <- statuses)
-        logInfo("frankfzw: register shuffle " + shuffleId + " with statuses " + s.partition + ":" + s.blockManagerId)
+        logInfo("frankfzw: register shuffle " + shuffleId + " with statuses " + s.partition + ":" + s.executorId)
       reduceStatuses += (shuffleId -> statuses)
     }
 
