@@ -185,6 +185,9 @@ class DAGScheduler(
   private[scheduler] val eventProcessLoop = new DAGSchedulerEventProcessLoop(this)
   taskScheduler.setDAGScheduler(this)
 
+  // executor IDs of current running executors
+  var executors = new HashSet[String]
+
   /**
    * Called by the TaskSetManager to report task's starting.
    */
@@ -326,14 +329,14 @@ class DAGScheduler(
     val parents = new HashSet[Stage]
     val visited = new HashSet[RDD[_]]
     val reduceStatuses: Array[ReduceStatus] = new Array[ReduceStatus](partitions.length)
-    val blockManagerList = blockManagerMaster.getBlockManagerList()
-    val finalList = if (sc.isLocal) {
-      blockManagerList
-    } else {
-      blockManagerList.filter(bm => bm.executorId != SparkContext.DRIVER_IDENTIFIER)
-    }
+    val currentExecutors = executors.toSeq
     for (i <- 0 until partitions.length) {
-      val reduceStatus = new ReduceStatus(partitions(i), finalList(i % finalList.length))
+      val executorId = if (sc.isLocal) {
+        SparkContext.DRIVER_IDENTIFIER
+      } else {
+        currentExecutors(i % currentExecutors.length)
+      }
+      val reduceStatus = new ReduceStatus(partitions(i), executorId)
       reduceStatuses(i) = reduceStatus
     }
     // We are manually maintaining a stack here to prevent StackOverflowError
@@ -1101,7 +1104,9 @@ class DAGScheduler(
             else {
               partitionsToCompute.map { id =>
                 val p = s.partitions(id)
-                val loc = for (rs <- reduceStatus if rs.partition == p) yield rs.blockManagerId.host
+                val loc =
+                  for (rs <- reduceStatus if rs.partition == p)
+                    yield env.blockManager.getRemoteBlockManagerInfo(rs.executorId).blockManagerId.host
                 val taskLocation = loc.toSeq.map(TaskLocation(_))
 
                 (id, taskLocation)
@@ -1672,6 +1677,7 @@ class DAGScheduler(
    * Added by frankfzw
    * @return the map of partion and TaskLocation
    */
+  /*
   private[spark]
   def getRandomLocs(stageId: Int, partitionToCompute: List[Int]): (Map[Int, Seq[TaskLocation]], Array[ReduceStatus]) = {
     val res = new mutable.HashMap[Int, Seq[TaskLocation]]()
@@ -1688,6 +1694,7 @@ class DAGScheduler(
     }
     return (res, reduceStatuses.toArray)
   }
+  */
 
   /**
    * Recursive implementation for getPreferredLocs.
