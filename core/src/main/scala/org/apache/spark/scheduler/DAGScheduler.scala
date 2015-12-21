@@ -327,8 +327,11 @@ class DAGScheduler(
     val visited = new HashSet[RDD[_]]
     val reduceStatuses: Array[ReduceStatus] = new Array[ReduceStatus](partitions.length)
     val blockManagerList = blockManagerMaster.getBlockManagerList()
-    val finalList = blockManagerList.filter(bId => bId.executorId != "driver")
-    // val finalList = blockManagerList
+    val finalList = if (sc.isLocal) {
+      blockManagerList
+    } else {
+      blockManagerList.filter(bm => bm.executorId != SparkContext.DRIVER_IDENTIFIER)
+    }
     for (i <- 0 until partitions.length) {
       val reduceStatus = new ReduceStatus(partitions(i), finalList(i % finalList.length))
       reduceStatuses(i) = reduceStatus
