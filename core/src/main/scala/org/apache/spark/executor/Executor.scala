@@ -219,7 +219,7 @@ private[spark] class Executor(
               // }
               var blockManagerInfo: RpcEndpointRef = null
               for (rs <- reduceStatuses) {
-                blockManagerInfo = env.blockManager.getRemoteBlockManager(rs.blockManagerId)
+                blockManagerInfo = env.blockManager.getRemoteBlockManagerInfo(rs.executorId).slaveEndpoint
                 // logInfo(s"frankfzw: Task ${taskId}: The remote BlockManger ID: ${rs.blockManagerId}; reduce ID: ${rs.partition} is ${blockManagerInfo.address}, it has ${rs.getTotalMapPartiton()} partition")
                 reduceIdToBlockManagerInfo += (rs.partition -> blockManagerInfo)
               }

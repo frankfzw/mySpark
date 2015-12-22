@@ -51,6 +51,17 @@ class BlockManagerMaster(
     // logInfo(s"frankfzw: Get ${blockManagerId}")
     driverEndpoint.askWithRetry[RpcEndpointRef](AskForRemoteBlockManager(blockManagerId))
   }
+
+  /**
+   * added by BeforeRain
+   * Look up BlockManagerInfo for a given executor 
+   * @param executorId
+   * @return BlockManagerInfo
+   */
+  def getRemoteBlockManagerInfo(executorId: String): BlockManagerInfo = {
+    driverEndpoint.askWithRetry[BlockManagerInfo](AskForRemoteBlockManagerInfo(executorId))
+  }
+
   /**
    * Get the all active BlockManagerId for random allocation
    * added by frankfzw

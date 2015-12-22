@@ -133,6 +133,8 @@ private[spark] class SparkDeploySchedulerBackend(
     memory: Int) {
     logInfo("Granted executor ID %s on hostPort %s with %d cores, %s RAM".format(
       fullId, hostPort, cores, Utils.megabytesToString(memory)))
+    val executorId = fullId.split("/")(1)
+    sc.dagScheduler.executors += executorId
   }
 
   override def executorRemoved(fullId: String, message: String, exitStatus: Option[Int]) {

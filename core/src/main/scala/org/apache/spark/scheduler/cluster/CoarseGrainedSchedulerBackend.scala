@@ -337,7 +337,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
   override def isReady(): Boolean = {
     if (sufficientResourcesRegistered) {
       logInfo("SchedulerBackend is ready for scheduling beginning after " +
-        s"reached minRegisteredResourcesRatio: $minRegisteredRatio")
+        s"reached minRegisteredResourcesRatio: $minRegisteredRatio; size: ${executorDataMap.keySet.size}")
       for (e <- executorDataMap) {
         logInfo(s"frankfzw: The executor data of ${e._1} is ${e._2}")
       }

@@ -185,6 +185,15 @@ private[spark] class BlockManager(
     master.getRemoteBlockManager(bId)
   }
 
+  /**
+   * added by BeforeRain
+   * Look up BlockManagerInfo for a given executor 
+   * @param executorId
+   * @return BlockManagerInfo
+   */
+  def getRemoteBlockManagerInfo(executorId: String): BlockManagerInfo = {
+    master.getRemoteBlockManagerInfo(executorId)
+  }
 
   /**
    * added by frankfzw
@@ -1409,8 +1418,8 @@ private[spark] object BlockManager extends Logging {
 
   def registerShufflePipe(blockManagerMaster: BlockManagerMaster, shuffleId: Int, reduceStatuses: Array[ReduceStatus]): Boolean = {
     for(rs <- reduceStatuses) {
-      val rpc = blockManagerMaster.getRemoteBlockManager(rs.blockManagerId)
-      logInfo(s"frankfzw: registerShufflePipe id: ${shuffleId}; target blockmanager ${rs.blockManagerId}; total map: ${rs.getTotalMapPartiton()}; total reduce: ${reduceStatuses.length}; reduce id: ${rs.partition}")
+      val rpc = blockManagerMaster.getRemoteBlockManagerInfo(rs.executorId).slaveEndpoint
+      logInfo(s"frankfzw: registerShufflePipe id: ${shuffleId}; target executor id: ${rs.executorId}; total map: ${rs.getTotalMapPartiton()}; total reduce: ${reduceStatuses.length}; reduce id: ${rs.partition}")
       // if (!rpc.askWithRetry[Boolean](RegisterShufflePipe(shuffleId, rs.getTotalMapPartiton(), rs.partition, reduceStatuses.length)))
       //   throw new SparkException(s"frankfzw: RegisterShufflePipe faild: id: ${shuffleId}; target blockmanager ${rs.blockManagerId}; total map: ${rs.getTotalMapPartiton()}; total reduce: ${reduceStatuses.length}; reduce id: ${rs.partition}")
       //   return false
