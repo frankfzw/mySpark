@@ -130,12 +130,9 @@ class BlockManagerMasterEndpoint(
       }
 
       //added by frankfzw to fetch the remote blockManager
-    case AskForRemoteBlockManager(blockManagerId) =>
-      context.reply(getRemoteBlockManager(blockManagerId))
+    case AskForRemoteBlockManager(executorId) =>
+      context.reply(getRemoteBlockManager(executorId))
 
-    // added by BeforeRain to fetch block manager info
-    case AskForRemoteBlockManagerInfo(executorId) =>
-      context.reply(getRemoteBlockManagerInfo(executorId))
   }
 
   /**
@@ -150,31 +147,15 @@ class BlockManagerMasterEndpoint(
   /**
    * added by frankfzw
    * Called by Executor to fetch the remote BlockManager
-   * @param blockMangerId
-   * @return Option[BlockManagerInfo]
-   */
-  private def getRemoteBlockManager(blockMangerId: BlockManagerId): RpcEndpointRef= {
-    if (blockManagerInfo.contains(blockMangerId)) {
-      logInfo(s"frankfzw: Ask for remote ${blockMangerId} --> return ${blockManagerInfo(blockMangerId).slaveEndpoint}")
-      return blockManagerInfo(blockMangerId).slaveEndpoint
-    }
-    else
-      throw new IllegalArgumentException(s"Missing ${blockMangerId.executorId}")
-  }
-
-  /**
-   * added by BeforeRain
-   * Look up BlockManagerInfo for a given executor 
    * @param executorId
-   * @return BlockManagerInfo
+   * @return the slave RpcEndpointRef of the corresponding BlockManager for the given executor
    */
-  private def getRemoteBlockManagerInfo(executorId: String): BlockManagerInfo = {
+  private def getRemoteBlockManager(executorId: String): RpcEndpointRef = {
     if (blockManagerIdByExecutor.contains(executorId)) {
       val blockManagerId = blockManagerIdByExecutor(executorId)
       if (blockManagerInfo.contains(blockManagerId)) {
-        val info = blockManagerInfo(blockManagerId)
-        logInfo(s"getRemoteBlockManagerInfo: executorId: ${executorId}, blockManagerId: ${blockManagerId}, blockManagerInfo: ${info}")
-        info
+        logInfo(s"frankfzw: getRemoteBlockManager: executorId: ${executorId}, blockManagerId: ${blockManagerId}")
+        blockManagerInfo(blockManagerId).slaveEndpoint
       } else {
         throw new IllegalArgumentException(s"Missing blockManagerId ${blockManagerId} in blockManagerInfo")
       }
@@ -481,7 +462,7 @@ private[spark] class BlockManagerInfo(
     timeMs: Long,
     val maxMem: Long,
     val slaveEndpoint: RpcEndpointRef)
-  extends Logging with Serializable {
+  extends Logging {
 
   private var _lastSeenMs: Long = timeMs
   private var _remainingMem: Long = maxMem

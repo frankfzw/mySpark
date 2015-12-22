@@ -43,23 +43,12 @@ class BlockManagerMaster(
 
   /**
    * added by frankfzw
-   * Fetch the remote BlockManager by it's id
-   * @param blockManagerId
+   * Fetch the remote BlockManager by executor id
+   * @param executorId
    * @return
    */
-  def getRemoteBlockManager(blockManagerId: BlockManagerId): RpcEndpointRef = {
-    // logInfo(s"frankfzw: Get ${blockManagerId}")
-    driverEndpoint.askWithRetry[RpcEndpointRef](AskForRemoteBlockManager(blockManagerId))
-  }
-
-  /**
-   * added by BeforeRain
-   * Look up BlockManagerInfo for a given executor 
-   * @param executorId
-   * @return BlockManagerInfo
-   */
-  def getRemoteBlockManagerInfo(executorId: String): BlockManagerInfo = {
-    driverEndpoint.askWithRetry[BlockManagerInfo](AskForRemoteBlockManagerInfo(executorId))
+  def getRemoteBlockManager(executorId: String): RpcEndpointRef = {
+    driverEndpoint.askWithRetry[RpcEndpointRef](AskForRemoteBlockManager(executorId))
   }
 
   /**
