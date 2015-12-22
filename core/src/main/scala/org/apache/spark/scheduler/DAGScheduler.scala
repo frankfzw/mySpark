@@ -185,8 +185,9 @@ class DAGScheduler(
   private[scheduler] val eventProcessLoop = new DAGSchedulerEventProcessLoop(this)
   taskScheduler.setDAGScheduler(this)
 
-  // executor IDs of current running executors
-  var executors = new HashSet[String]
+  // Mapping from executor id to executor host, which would be modified by
+  // SparkDeploySchedulerBackend when an executor is added or removed
+  var executorIdToHost = new HashMap[String, String]
 
   /**
    * Called by the TaskSetManager to report task's starting.
@@ -329,7 +330,7 @@ class DAGScheduler(
     val parents = new HashSet[Stage]
     val visited = new HashSet[RDD[_]]
     val reduceStatuses: Array[ReduceStatus] = new Array[ReduceStatus](partitions.length)
-    val currentExecutors = executors.toSeq
+    val currentExecutors = executorIdToHost.keySet.toSeq
     for (i <- 0 until partitions.length) {
       val executorId = if (sc.isLocal) {
         SparkContext.DRIVER_IDENTIFIER
@@ -1104,9 +1105,13 @@ class DAGScheduler(
             else {
               partitionsToCompute.map { id =>
                 val p = s.partitions(id)
-                val loc =
+                val loc = if (sc.isLocal) {
                   for (rs <- reduceStatus if rs.partition == p)
-                    yield env.blockManager.getRemoteBlockManagerInfo(rs.executorId).blockManagerId.host
+                    yield "localhost"
+                } else {
+                  for (rs <- reduceStatus if rs.partition == p)
+                    yield executorIdToHost(rs.executorId)
+                }
                 val taskLocation = loc.toSeq.map(TaskLocation(_))
 
                 (id, taskLocation)
