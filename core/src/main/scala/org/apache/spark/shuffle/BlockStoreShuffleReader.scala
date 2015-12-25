@@ -55,26 +55,32 @@ private[spark] class BlockStoreShuffleReader[K, C](
     val serializerInstance = ser.newInstance()
     var fromCache: Boolean = false
 
+    var blockFetcherItr: ShuffleBlockFetcherIterator = null
     if (blockManager.isCached(handle.shuffleId)) {
       fromCache = true
       logInfo(s"frankfzw: Reading from local cache, shuffleId is ${handle.shuffleId}, startPartition: ${startPartition}, endPartition: ${endPartition}")
       val temp = new mutable.HashMap[BlockManagerId, ArrayBuffer[(BlockId, Long)]]
-      val futureArray = new Array[Array[Future[(String, Long)]]](endPartition - startPartition)
+      val cachedIdToBlockManagerId = new mutable.HashMap[String, BlockManagerId]()
       for (rId <- startPartition until endPartition) {
         val totalMapPartition = blockManager.getMapPartitionNumber(handle.shuffleId, rId)
-        futureArray(rId - startPartition) = new Array[Future[(String, Long)]](totalMapPartition)
         for (mId <- 0 until totalMapPartition) {
-          futureArray(rId - startPartition)(mId) = blockManager.getCache(handle.shuffleId, rId, mId)
-          futureArray(rId - startPartition)(mId).onSuccess {
-            case (exeId, size) =>
-              val blockManagerId = blockManager.getRemoteBlockManagerId(exeId)
-              temp.getOrElseUpdate(blockManagerId, ArrayBuffer()) += ((ShuffleBlockId(handle.shuffleId, mId, rId), size))
+          val (exeId, size) = blockManager.getCache(handle.shuffleId, rId, mId)
+          if (!cachedIdToBlockManagerId.contains(exeId)) {
+            val blockManagerId = blockManager.getRemoteBlockManagerId(exeId)
+            cachedIdToBlockManagerId.put(exeId, blockManagerId)
           }
+          temp.getOrElseUpdate(cachedIdToBlockManagerId(exeId), ArrayBuffer()) += ((ShuffleBlockId(handle.shuffleId, mId, rId), size))
         }
       }
-
+      blockFetcherItr = new ShuffleBlockFetcherIterator(
+      context,
+      blockManager.shuffleClient,
+      blockManager,
+      temp.toSeq,
+      // Note: we use getSizeAsMb when no suffix is provided for backwards compatibility
+      SparkEnv.get.conf.getSizeAsMb("spark.reducer.maxSizeInFlight", "48m") * 1024 * 1024)
     } else {
-      val blockFetcherItr = new ShuffleBlockFetcherIterator(
+      blockFetcherItr = new ShuffleBlockFetcherIterator(
       context,
       blockManager.shuffleClient,
       blockManager,
@@ -85,21 +91,18 @@ private[spark] class BlockStoreShuffleReader[K, C](
       // frankfzw: check if it get the real data from MapOutputTracker
       if (blockFetcherItr.empty())
         return null
+    }
+    // Wrap the streams for compression based on configuration
+    val wrappedStreams = blockFetcherItr.map { case (blockId, inputStream) =>
+      blockManager.wrapForCompression(blockId, inputStream)
+    }
 
-      // Wrap the streams for compression based on configuration
-      val wrappedStreams = blockFetcherItr.map { case (blockId, inputStream) =>
-        blockManager.wrapForCompression(blockId, inputStream)
-      }
-
-      // Create a key/value iterator for each stream
-      recordIter = wrappedStreams.flatMap { wrappedStream =>
-        // Note: the asKeyValueIterator below wraps a key/value iterator inside of a
-        // NextIterator. The NextIterator makes sure that close() is called on the
-        // underlying InputStream when all records have been read.
-        serializerInstance.deserializeStream(wrappedStream).asKeyValueIterator
-      }
-
-
+    // Create a key/value iterator for each stream
+    recordIter = wrappedStreams.flatMap { wrappedStream =>
+      // Note: the asKeyValueIterator below wraps a key/value iterator inside of a
+      // NextIterator. The NextIterator makes sure that close() is called on the
+      // underlying InputStream when all records have been read.
+      serializerInstance.deserializeStream(wrappedStream).asKeyValueIterator
     }
     // Update the context task metrics for each record read.
     val readMetrics = context.taskMetrics.createShuffleReadMetricsForDependency()

@@ -241,13 +241,8 @@ private[spark] class BlockManager(
    * @param mapPartition
    * @return the executor of target blockmanager and the block size
    */
-  def getCache(shuffleId: Int, reducePartition: Int, mapPartition: Int): Future[(String, Long)] = {
-    val ret = Future {
-      while (shuffleDataCache(shuffleId)(reducePartition)(mapPartition)._2 == -1)
-        Thread.sleep(2)
-      shuffleDataCache(shuffleId)(reducePartition)(mapPartition)
-    }
-    ret
+  def getCache(shuffleId: Int, reducePartition: Int, mapPartition: Int): (String, Long) = {
+    shuffleDataCache(shuffleId)(reducePartition)(mapPartition)
   }
 
   /**
