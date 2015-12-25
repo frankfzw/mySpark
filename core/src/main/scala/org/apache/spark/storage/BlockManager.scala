@@ -172,8 +172,7 @@ private[spark] class BlockManager(
   private lazy val compressionCodec: CompressionCodec = CompressionCodec.createCodec(conf)
 
   // added by frankfzw, cache the shuffle data
-  private val shuffleDataCache: HashMap[Int, Array[ArrayBuffer[(Any, Any)]]] = new HashMap
-  // private val shuffleCacheStatus: Hash[Int, Array[CountDownLatch]] = new HashMap
+  private val shuffleDataCache: HashMap[Int, Array[Array[(String, Long)]]] = new HashMap
 
   /**
    * added by frankfzw
@@ -182,6 +181,10 @@ private[spark] class BlockManager(
    */
   def getRemoteBlockManager(executorId: String): RpcEndpointRef = {
     master.getRemoteBlockManager(executorId)
+  }
+
+  def getRemoteBlockManagerId(executorId: String): BlockManagerId = {
+    master.getRemoteBlockManagerId(executorId)
   }
 
   /**
@@ -193,11 +196,11 @@ private[spark] class BlockManager(
    */
   def remoteWrite(shuffleId: Int, reduceId: Int, key: Any, value: Any): Boolean = {
     // logInfo(s"frankfzw: Receive the remote pushing data of shuffle ${shuffleId} : partition ${reduceId}; ${key} -> ${value}; ${shuffleDataCache(shuffleId).length}")
-    val record = (key, value)
-    if (!shuffleDataCache.contains(shuffleId) || shuffleDataCache(shuffleId)(reduceId) == null) {
-      throw new SparkException(s"frankfzw: remoteWrite wrong! id: ${shuffleId}; reduceID: ${reduceId}; cache: ${shuffleDataCache.keySet}; array buffer: ${shuffleDataCache.values}")
-    }
-    shuffleDataCache(shuffleId)(reduceId) += record
+    // val record = (key, value)
+    // if (!shuffleDataCache.contains(shuffleId) || shuffleDataCache(shuffleId)(reduceId) == null) {
+    //   throw new SparkException(s"frankfzw: remoteWrite wrong! id: ${shuffleId}; reduceID: ${reduceId}; cache: ${shuffleDataCache.keySet}; array buffer: ${shuffleDataCache.values}")
+    // }
+    // shuffleDataCache(shuffleId)(reduceId) += record
     true
   }
 
@@ -213,8 +216,8 @@ private[spark] class BlockManager(
   def registerShufflePipe(shuffleId: Int, totalMapPartiton: Int, reducePartition: Int, totalReducePartition: Int): Boolean = {
     // logInfo(s"frankfzw: Register shuffle, shuffle ID: ${shuffleId}; total map partition ${totalMapPartiton}; total reduce partition: ${totalReducePartition}; target reduce partition: ${reducePartition}")
     if (!shuffleDataCache.contains(shuffleId)) {
-      val cacheArray = new Array[ArrayBuffer[(Any, Any)]](totalReducePartition)
-      shuffleDataCache += (shuffleId -> cacheArray.map(x => new ArrayBuffer[(Any, Any)]()))
+      val cacheArray = new Array[Array[(String, Long)]](totalReducePartition)
+      shuffleDataCache += (shuffleId -> cacheArray.map(x => new Array[(String, Long)](totalMapPartiton)))
       // logInfo(s"frankfzw: Shuffle registerd: id: ${shuffleId}, reduce partition: ${reducePartition}, lock: ${shuffleCacheStatus(shuffleId)(reducePartition)}, buffer: ${shuffleDataCache(shuffleId)(reducePartition)}")
     }
     // logError("frankfzw: This shuffle was registered before !")
@@ -233,33 +236,46 @@ private[spark] class BlockManager(
 
   /**
    * added by frankfzw
-   * called by BlockStoreShuffleReader to fetch the cached data
-   * block here
    * @param shuffleId
-   * @return
+   * @param reducePartition
+   * @param mapPartition
+   * @return the executor of target blockmanager and the block size
    */
-  // def getCache(shuffleId: Int, reducePartition: Int): Future[ArrayBuffer[(Any, Any)]] = {
-  //   val res = Future[ArrayBuffer[(Any, Any)]] {
-  //     shuffleCacheStatus(shuffleId)(reducePartition).await()
-  //     shuffleDataCache(shuffleId)(reducePartition)
-  //   }(futureExecutionContext)
-  //   // logInfo(s"frankfzw: Return the Future with ${shuffleId}:${reducePartition}")
-  //   return res
-  // }
-
-  def getCache(shuffleId: Int, reducePartition: Int): ArrayBuffer[(Any, Any)] = {
-    shuffleDataCache(shuffleId)(reducePartition)
+  def getCache(shuffleId: Int, reducePartition: Int, mapPartition: Int): Future[(String, Long)] = {
+    val ret = Future {
+      while (shuffleDataCache(shuffleId)(reducePartition)(mapPartition)._2 == -1)
+        Thread.sleep(2)
+      shuffleDataCache(shuffleId)(reducePartition)(mapPartition)
+    }
+    ret
   }
+
+  /**
+   * added by frankfzw
+   * @param shuffleId
+   * @param reducePartition
+   * @return number of total map partitions
+   */
+  def getMapPartitionNumber(shuffleId: Int, reducePartition: Int): Int = {
+    shuffleDataCache(shuffleId)(reducePartition).length
+  }
+
   /**
    * added by frankfzw
    * record the start of one map task
-   * @param shuffledId
+   * @param shuffleId
    * @param mapPartition
    * @return
    */
-  def pipeStart(shuffledId: Int, mapPartition: Int, reducePartition: Int): Boolean = {
-    logInfo(s"frankfzw: The map partition ${mapPartition} of shuffle ${shuffledId}  for reduce partition ${reducePartition} starts")
-    true
+  def pipeStart(shuffleId: Int, mapPartition: Int, mapExecutorId: String, reducePartition: Int): Boolean = {
+    if (shuffleDataCache.contains(shuffleId)) {
+      logInfo(s"frankfzw: The map partition ${mapPartition} of shuffle ${shuffleId}  for reduce partition ${reducePartition} starts on ${mapExecutorId}")
+      shuffleDataCache(shuffleId)(reducePartition)(mapPartition) = (mapExecutorId, -1)
+      true
+    } else {
+      throw new SparkException(s"frankfzw: The shuffle ${shuffleId} is not registered")
+      false
+    }
   }
 
   /**
@@ -269,10 +285,16 @@ private[spark] class BlockManager(
    * @param mapPartition
    * @return
    */
-  def pipeEnd(shuffleId: Int, mapPartition: Int, reducePartition: Int): Boolean = {
-    logInfo(s"frankfzw: The map partition ${mapPartition} of shuffle ${shuffleId} for reduce partition ${reducePartition} was finished")
-    // shuffleCacheStatus(shuffleId)(reducePartition).countDown()
-    true
+  def pipeEnd(shuffleId: Int, mapPartition: Int, reducePartition: Int, size: Long): Boolean = {
+    if (shuffleDataCache.contains(shuffleId)) {
+      val eId = shuffleDataCache(shuffleId)(reducePartition)(mapPartition)._1
+      shuffleDataCache(shuffleId)(reducePartition)(mapPartition) = (eId, size)
+      logInfo(s"frankfzw: The map partition ${mapPartition} of shuffle ${shuffleId}  for reduce partition ${reducePartition} finished on ${eId}")
+      true
+    } else {
+      throw new SparkException(s"frankfzw: The shuffle ${shuffleId} is not registered")
+      false
+    }
   }
   /**
    * Initializes the BlockManager with the given appId. This is not performed in the constructor as
@@ -1417,11 +1439,11 @@ private[spark] object BlockManager extends Logging {
     true
   }
 
-  def pipeStart(remoteBlockManager: RpcEndpointRef, shuffleId: Int, mapPartition: Int, reducePartition: Int): Boolean = {
-    remoteBlockManager.askWithRetry[Boolean](PipeStart(shuffleId, mapPartition, reducePartition))
+  def pipeStart(remoteBlockManager: RpcEndpointRef, shuffleId: Int, mapPartition: Int, mapExecutorId:String, reducePartition: Int): Boolean = {
+    remoteBlockManager.askWithRetry[Boolean](PipeStart(shuffleId, mapPartition, mapExecutorId, reducePartition))
   }
 
-  def pipeEnd(remoteBlockManager: RpcEndpointRef, shuffleId: Int, mapPartition: Int, reducePartition: Int): Boolean = {
-    remoteBlockManager.askWithRetry[Boolean](PipeEnd(shuffleId, mapPartition, reducePartition))
+  def pipeEnd(remoteBlockManager: RpcEndpointRef, shuffleId: Int, mapPartition: Int, reducePartition: Int, size: Long): Boolean = {
+    remoteBlockManager.askWithRetry[Boolean](PipeEnd(shuffleId, mapPartition, reducePartition, size))
   }
 }

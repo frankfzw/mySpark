@@ -66,6 +66,8 @@ private[spark] class ShuffleMapTask(
   // private var reduceStatuses: Array[ReduceStatus] = null
   private var targetBlockManger: HashMap[Int, RpcEndpointRef] = null
 
+  private var executorId: String = null
+
   def setShuffleId(sId: Int): Unit = {
     shuffleId = sId
   }
@@ -78,10 +80,11 @@ private[spark] class ShuffleMapTask(
     this.getClass.getName
   }
 
-  def setPipeFlag(pIdToBlockManager: HashMap[Int, RpcEndpointRef]): Unit = {
+  def setPipeFlag(pIdToBlockManager: HashMap[Int, RpcEndpointRef], eId: String): Unit = {
     pipeFlag = true
     targetBlockManger = new HashMap[Int, RpcEndpointRef]()
     targetBlockManger = pIdToBlockManager
+    executorId = eId
     // targetBlockManger.foreach(kv => logInfo(s"frankfzw: Target BlockManger ${kv._1} : ${kv._2.slaveEndpoint.address}"))
   }
 
@@ -113,17 +116,18 @@ private[spark] class ShuffleMapTask(
       if (pipeFlag) {
         // targetBlockManger.foreach(kv => logInfo(s"frankfzw: Target BlockManger ${kv._1} : ${kv._2.slaveEndpoint.address}"))
         for (kv <- targetBlockManger) {
-          BlockManager.pipeStart(kv._2, shuffleId, partitionId, kv._1)
+          BlockManager.pipeStart(kv._2, shuffleId, partitionId, executorId, kv._1)
         }
-        writer.writeRemote(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]], targetBlockManger)
-        for (kv <- targetBlockManger) {
-          BlockManager.pipeEnd(kv._2, shuffleId, partitionId, kv._1)
-        }
+        writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])
       } else {
         writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])
       }
       // writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])
-      writer.stop(success = true).get
+      val ret = writer.stop(success = true).get
+      for (kv <- targetBlockManger) {
+        BlockManager.pipeEnd(kv._2, shuffleId, partitionId, kv._1, ret.getSizeForBlock(kv._1))
+      }
+      ret
     } catch {
       case e: Exception =>
         try {

@@ -133,6 +133,9 @@ class BlockManagerMasterEndpoint(
     case AskForRemoteBlockManager(executorId) =>
       context.reply(getRemoteBlockManager(executorId))
 
+    case AskForRemoteBlockMangerId(executorId) =>
+      context.reply(getRemoteBlockManagerId(executorId))
+
   }
 
   /**
@@ -162,6 +165,13 @@ class BlockManagerMasterEndpoint(
     } else {
       throw new IllegalArgumentException(s"Missing executorId ${executorId} in blockManagerIdByExecutor")
     }
+  }
+
+  private def getRemoteBlockManagerId(executorId: String): BlockManagerId = {
+    if (blockManagerIdByExecutor.contains(executorId))
+      blockManagerIdByExecutor(executorId)
+    else
+      throw new IllegalArgumentException(s"frankfzw: Missing executorId ${executorId}")
   }
 
   private def removeRdd(rddId: Int): Future[Seq[Int]] = {

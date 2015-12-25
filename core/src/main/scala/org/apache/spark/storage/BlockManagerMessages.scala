@@ -115,11 +115,13 @@ private[spark] object BlockManagerMessages {
   // added by frankfzw. Fetch the remote blockMangerSlaveEndPoint
   case class AskForRemoteBlockManager(executorId: String) extends ToBlockManagerMaster
 
+  case class AskForRemoteBlockMangerId(executorId: String) extends ToBlockManagerMaster
+
   case class WriteRemote(shuffleId: Int, reduceId: Int, key: Any, value: Any) extends ToBlockManagerSlave
 
   case class RegisterShufflePipe(shuffleId: Int, totalMapPartition: Int, reducePartition: Int, totalReducePartiton: Int) extends ToBlockManagerSlave
 
-  case class PipeStart(shuffleId: Int, mapPartition: Int, reducePartition: Int) extends  ToBlockManagerSlave
+  case class PipeStart(shuffleId: Int, mapPartition: Int, mapExecutorId:String, reducePartition: Int) extends  ToBlockManagerSlave
 
-  case class PipeEnd(shuffleId: Int, mapPartition: Int, reducePartition: Int) extends ToBlockManagerSlave
+  case class PipeEnd(shuffleId: Int, mapPartition: Int, reducePartition: Int, size: Long) extends ToBlockManagerSlave
 }

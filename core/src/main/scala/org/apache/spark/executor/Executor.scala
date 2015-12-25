@@ -223,7 +223,7 @@ private[spark] class Executor(
                 // logInfo(s"frankfzw: Task ${taskId}: The remote BlockManger ID: ${rs.blockManagerId}; reduce ID: ${rs.partition} is ${blockManagerInfo.address}, it has ${rs.getTotalMapPartiton()} partition")
                 reduceIdToBlockManagerInfo += (rs.partition -> blockManagerInfo)
               }
-              task.asInstanceOf[ShuffleMapTask].setPipeFlag(reduceIdToBlockManagerInfo)
+              task.asInstanceOf[ShuffleMapTask].setPipeFlag(reduceIdToBlockManagerInfo, env.blockManager.blockManagerId.executorId)
             }
           }
         }

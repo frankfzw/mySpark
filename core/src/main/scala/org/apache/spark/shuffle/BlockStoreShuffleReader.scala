@@ -22,12 +22,13 @@ import java.util.concurrent.CountDownLatch
 import org.apache.hadoop.io.SequenceFile.Sorter.RawKeyValueIterator
 import org.apache.spark._
 import org.apache.spark.serializer.Serializer
-import org.apache.spark.storage.{BlockManager, ShuffleBlockFetcherIterator}
+import org.apache.spark.storage._
 import org.apache.spark.util.{NextIterator, CompletionIterator}
 import org.apache.spark.util.collection.ExternalSorter
 
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
-import scala.concurrent.Await
+import scala.concurrent.{Future, Await}
 import scala.concurrent.duration.Duration
 import scala.util.control.Breaks._
 
@@ -57,32 +58,20 @@ private[spark] class BlockStoreShuffleReader[K, C](
     if (blockManager.isCached(handle.shuffleId)) {
       fromCache = true
       logInfo(s"frankfzw: Reading from local cache, shuffleId is ${handle.shuffleId}, startPartition: ${startPartition}, endPartition: ${endPartition}")
-      val bufferArray = new ArrayBuffer[(Any, Any)]()
-      for (p <- startPartition until endPartition) {
-        val buffer = blockManager.getCache(handle.shuffleId, p)
-        bufferArray ++= buffer
-      }
-      val cache = new NextIterator[(Any, Any)] {
-        var i = 0
-        override protected def getNext() = {
-          try {
-            val kv: (Any, Any) = bufferArray(0)
-            bufferArray -= kv
-            kv
-          } catch {
-            case eof: IndexOutOfBoundsException => {
-              finished = true
-              null
-            }
+      val temp = new mutable.HashMap[BlockManagerId, ArrayBuffer[(BlockId, Long)]]
+      val futureArray = new Array[Array[Future[(String, Long)]]](endPartition - startPartition)
+      for (rId <- startPartition until endPartition) {
+        val totalMapPartition = blockManager.getMapPartitionNumber(handle.shuffleId, rId)
+        futureArray(rId - startPartition) = new Array[Future[(String, Long)]](totalMapPartition)
+        for (mId <- 0 until totalMapPartition) {
+          futureArray(rId - startPartition)(mId) = blockManager.getCache(handle.shuffleId, rId, mId)
+          futureArray(rId - startPartition)(mId).onSuccess {
+            case (exeId, size) =>
+              val blockManagerId = blockManager.getRemoteBlockManagerId(exeId)
+              temp.getOrElseUpdate(blockManagerId, ArrayBuffer()) += ((ShuffleBlockId(handle.shuffleId, mId, rId), size))
           }
         }
-
-        override  protected def close(): Unit = {
-          bufferArray.clear()
-        }
       }
-
-      recordIter = cache
 
     } else {
       val blockFetcherItr = new ShuffleBlockFetcherIterator(

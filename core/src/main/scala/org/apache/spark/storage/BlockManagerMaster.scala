@@ -52,6 +52,16 @@ class BlockManagerMaster(
   }
 
   /**
+   * added by frankfzw
+   * Fetch the remote BlockManagerId by executor id
+   * @param executorId
+   * @return
+   */
+  def getRemoteBlockManagerId(executorId: String): BlockManagerId = {
+    driverEndpoint.askWithRetry[BlockManagerId](AskForRemoteBlockMangerId(executorId))
+  }
+
+  /**
    * Get the all active BlockManagerId for random allocation
    * added by frankfzw
    * @return the list of BlockManagerId
