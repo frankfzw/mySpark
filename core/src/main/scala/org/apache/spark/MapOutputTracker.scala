@@ -293,6 +293,9 @@ private[spark] abstract class MapOutputTracker(conf: SparkConf) extends Logging 
         null
       }
     } else {
+      // for (s <- statuses) {
+      //   logInfo(s"frankfzw: The reduce status of ${shuffleId}: ${s}; map ${s.getTotalMapPartiton()}; reduce ${s.partition}; exeId ${s.executorId}")
+      // }
       return statuses
     }
   }
@@ -434,8 +437,8 @@ private[spark] class MapOutputTrackerMaster(conf: SparkConf)
       reduceStatuses.update(shuffleId, statuses)
     } else {
       logInfo("frankfzw: register shuffle " + shuffleId + " with statuses " + statuses.length)
-      for(s <- statuses)
-        logInfo("frankfzw: register shuffle " + shuffleId + " with statuses " + s.partition + ":" + s.executorId)
+      // for(s <- statuses)
+      //   logInfo("frankfzw: register shuffle " + shuffleId + " with statuses map: " + s.getTotalMapPartiton() + "; reduce: " + s.partition + "; exeId: " + s.executorId)
       reduceStatuses += (shuffleId -> statuses)
     }
 

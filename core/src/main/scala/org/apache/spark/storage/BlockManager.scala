@@ -284,7 +284,7 @@ private[spark] class BlockManager(
     if (shuffleDataCache.contains(shuffleId)) {
       val eId = shuffleDataCache(shuffleId)(reducePartition)(mapPartition)._1
       shuffleDataCache(shuffleId)(reducePartition)(mapPartition) = (eId, size)
-      logInfo(s"frankfzw: The map partition ${mapPartition} of shuffle ${shuffleId}  for reduce partition ${reducePartition} finished on ${eId}")
+      logInfo(s"frankfzw: The map partition ${mapPartition} of shuffle ${shuffleId}  for reduce partition ${reducePartition} finished on ${eId}, size: ${size}")
       true
     } else {
       throw new SparkException(s"frankfzw: The shuffle ${shuffleId} is not registered")

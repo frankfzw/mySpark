@@ -194,6 +194,7 @@ final class ShuffleBlockFetcherIterator(
     // Tracks total number of blocks (including zero sized blocks)
     var totalBlocks = 0
     for ((address, blockInfos) <- blocksByAddress) {
+      logInfo(s"frankfzw: address: ${address}, info: ${blockInfos}")
       totalBlocks += blockInfos.size
       if (address.executorId == blockManager.blockManagerId.executorId) {
         // Filter out zero-sized blocks

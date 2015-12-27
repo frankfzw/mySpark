@@ -352,10 +352,14 @@ class DAGScheduler(
         for (dep <- r.dependencies) {
           dep match {
             case shufDep: ShuffleDependency[_, _, _] =>
-              for (rs <- reduceStatuses)
-                rs.setTotalMapPartition(r.partitions.length)
+              val newReduceStatuses = reduceStatuses.map{
+                rs =>
+                  val newRs = new ReduceStatus(rs.partition, rs.executorId)
+                  newRs.setTotalMapPartition(dep.rdd.partitions.length)
+                  newRs
+              }
               parents += getShuffleMapStage(shufDep, firstJobId)
-              mapOutputTracker.registerPendingReduce(shufDep.shuffleId, reduceStatuses)
+              mapOutputTracker.registerPendingReduce(shufDep.shuffleId, newReduceStatuses)
             case _ =>
               waitingForVisit.push(dep.rdd)
           }
