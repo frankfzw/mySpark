@@ -19,10 +19,11 @@ package org.apache.spark.storage
 
 import java.io._
 import java.nio.{ByteBuffer, MappedByteBuffer}
-import java.util.concurrent.CountDownLatch
+import java.util.concurrent.{LinkedBlockingQueue, CountDownLatch}
 
 import org.apache.spark.scheduler.ReduceStatus
 import org.apache.spark.storage.BlockManagerMessages._
+import org.apache.spark.storage.ShuffleBlockFetcherIterator.{FailureFetchResult, SuccessFetchResult, FetchResult}
 
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 import scala.collection.concurrent.TrieMap
@@ -40,7 +41,7 @@ import org.apache.spark.memory.MemoryManager
 import org.apache.spark.network._
 import org.apache.spark.network.buffer.{ManagedBuffer, NioManagedBuffer}
 import org.apache.spark.network.netty.SparkTransportConf
-import org.apache.spark.network.shuffle.ExternalShuffleClient
+import org.apache.spark.network.shuffle.{BlockFetchingListener, ExternalShuffleClient}
 import org.apache.spark.network.shuffle.protocol.ExecutorShuffleInfo
 import org.apache.spark.rpc.{RpcEndpointRef, RpcEnv}
 import org.apache.spark.serializer.{SerializerInstance, Serializer}
@@ -174,17 +175,23 @@ private[spark] class BlockManager(
   // added by frankfzw, cache the shuffle data
   private val shuffleDataCache: HashMap[Int, Array[Array[(String, Long)]]] = new HashMap
 
+  private val shuffleFetchResultQueue: HashMap[Int, Array[LinkedBlockingQueue[FetchResult]]] = new HashMap
+
+  private val shuffleFetchBlockNumber: HashMap[Int, Array[Int]] = new HashMap
+
+  val cachedExeIdToBlockManagerId: HashMap[String, BlockManagerId] = new HashMap
+
   /**
    * added by frankfzw
-   * @param executorId
+   * @param exeId
    * @return the slave RpcEndpointRef of the corresponding BlockManager for the given executor
    */
-  def getRemoteBlockManager(executorId: String): RpcEndpointRef = {
-    master.getRemoteBlockManager(executorId)
+  def getRemoteBlockManager(exeId: String): RpcEndpointRef = {
+    master.getRemoteBlockManager(exeId)
   }
 
-  def getRemoteBlockManagerId(executorId: String): BlockManagerId = {
-    master.getRemoteBlockManagerId(executorId)
+  def getRemoteBlockManagerId(exeId: String): BlockManagerId = {
+    master.getRemoteBlockManagerId(exeId)
   }
 
   /**
@@ -211,15 +218,18 @@ private[spark] class BlockManager(
    * @param totalMapPartiton the total map partitions number
    * @param reducePartition The reduce partition number that this task should do. There maybe many tasks running on the same block manager doing the same shuffle job
    * @param totalReducePartition The number of reduce tasks
-   * @return
+   * @return true
    */
   def registerShufflePipe(shuffleId: Int, totalMapPartiton: Int, reducePartition: Int, totalReducePartition: Int): Boolean = {
     // logInfo(s"frankfzw: Register shuffle, shuffle ID: ${shuffleId}; total map partition ${totalMapPartiton}; total reduce partition: ${totalReducePartition}; target reduce partition: ${reducePartition}")
     if (!shuffleDataCache.contains(shuffleId)) {
       val cacheArray = new Array[Array[(String, Long)]](totalReducePartition)
       shuffleDataCache += (shuffleId -> cacheArray.map(x => new Array[(String, Long)](totalMapPartiton)))
+      shuffleFetchBlockNumber += (shuffleId -> Array.fill[Int](totalReducePartition)(0))
+      shuffleFetchResultQueue += (shuffleId -> new Array[LinkedBlockingQueue[FetchResult]](totalReducePartition))
       // logInfo(s"frankfzw: Shuffle registerd: id: ${shuffleId}, reduce partition: ${reducePartition}, lock: ${shuffleCacheStatus(shuffleId)(reducePartition)}, buffer: ${shuffleDataCache(shuffleId)(reducePartition)}")
     }
+    shuffleFetchResultQueue(shuffleId)(reducePartition) = new LinkedBlockingQueue[FetchResult]()
     // logError("frankfzw: This shuffle was registered before !")
     true
   }
@@ -227,7 +237,7 @@ private[spark] class BlockManager(
   /**
    * added by frankfzw
    * called by BlockStoreShuffleReader to find out whether the data is cached on local memory
-   * @param shuffleId
+   * @param shuffleId shuffle id
    * @return
    */
   def isCached(shuffleId: Int): Boolean = {
@@ -258,9 +268,9 @@ private[spark] class BlockManager(
   /**
    * added by frankfzw
    * record the start of one map task
-   * @param shuffleId
-   * @param mapPartition
-   * @return
+   * @param shuffleId shuffle id
+   * @param mapPartition map id
+   * @return true if the shuffle is registered
    */
   def pipeStart(shuffleId: Int, mapPartition: Int, mapExecutorId: String, reducePartition: Int): Boolean = {
     if (shuffleDataCache.contains(shuffleId)) {
@@ -275,21 +285,78 @@ private[spark] class BlockManager(
 
   /**
    * added by frankfzw
-   * record the end of one map task
-   * @param shuffleId
-   * @param mapPartition
-   * @return
+   * record the end of one map task and fetch the block that is needed by the further reduce tasks
+   * @param shuffleId shuffle id
+   * @param mapPartition map id
+   * @return true if the shuffle is registered
    */
   def pipeEnd(shuffleId: Int, mapPartition: Int, reducePartition: Int, size: Long): Boolean = {
     if (shuffleDataCache.contains(shuffleId)) {
       val eId = shuffleDataCache(shuffleId)(reducePartition)(mapPartition)._1
       shuffleDataCache(shuffleId)(reducePartition)(mapPartition) = (eId, size)
       logInfo(s"frankfzw: The map partition ${mapPartition} of shuffle ${shuffleId}  for reduce partition ${reducePartition} finished on ${eId}, size: ${size}")
+      shuffleFetchBlockNumber(shuffleId)(reducePartition) += sendRequest(eId, shuffleId, mapPartition, reducePartition, size)
       true
     } else {
       throw new SparkException(s"frankfzw: The shuffle ${shuffleId} is not registered")
       false
     }
+  }
+
+  /**
+   * added by frankfzw
+   * send the fetch request to the remote BlockManager when a map partition is finished
+   * @param exeId the executor id of BlockManager
+   * @param shuffleId
+   * @param mapId
+   * @param reduceId
+   * @param size
+   */
+  private def sendRequest(exeId: String, shuffleId: Int, mapId: Int, reduceId: Int, size: Long): Int = {
+    val blockArray = new Array[(BlockId, Long)](1)
+    blockArray(0) = (ShuffleBlockId(shuffleId, mapId, reduceId), size)
+    if (!(exeId == blockManagerId.executorId) && size > 0) {
+      if (!cachedExeIdToBlockManagerId.contains(exeId)) {
+        cachedExeIdToBlockManagerId += (exeId -> getRemoteBlockManagerId(exeId))
+      }
+      val address = cachedExeIdToBlockManagerId(exeId)
+      val sizeMap = blockArray.map { case (block, size) => (block.toString, size) }.toMap
+      val blockIds = blockArray.map(_._1.toString)
+      shuffleClient.fetchBlocks(address.host, address.port, address.executorId, blockIds.toArray,
+        new BlockFetchingListener {
+          override def onBlockFetchSuccess(blockId: String, buf: ManagedBuffer): Unit = {
+            buf.retain()
+            shuffleFetchResultQueue(shuffleId)(reduceId).put(new SuccessFetchResult(BlockId(blockId), address, sizeMap(blockId), buf))
+            logTrace("frankfzw: Got remote block " + blockId)
+          }
+
+          override def onBlockFetchFailure(blockId: String, e: Throwable): Unit = {
+            logError(s"frankfzw: Failed to get block(s) from ${address.host}:${address.port}", e)
+            shuffleFetchResultQueue(shuffleId)(reduceId).put(new FailureFetchResult(BlockId(blockId), address, e))
+          }
+        }
+      )
+      1
+    }
+    0
+  }
+
+  /**
+   * added by frankfzw
+   * get the Array of LinkedBlockingQueue[FetchResult] [startPartition, endPartition)
+   * @param shuffleId shuffle id
+   * @param startPartition the start partition number of reduce, include
+   * @param endPartition the end partition number of reduce, exclude
+   * @return the FetchResult of remote data fetch
+   */
+  def getPendngFetchRequest(shuffleId: Int, startPartition: Int, endPartition: Int): (Array[LinkedBlockingQueue[FetchResult]], Array[Int]) = {
+    val buffer = new Array[LinkedBlockingQueue[FetchResult]](endPartition - startPartition)
+    val number = new Array[Int](endPartition - startPartition)
+    for (i <- startPartition until endPartition) {
+      buffer(i - startPartition) = shuffleFetchResultQueue(shuffleId)(i)
+      number(i - startPartition) = shuffleFetchBlockNumber(shuffleId)(i)
+    }
+    (buffer, number)
   }
   /**
    * Initializes the BlockManager with the given appId. This is not performed in the constructor as

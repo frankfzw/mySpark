@@ -20,6 +20,8 @@ package org.apache.spark.storage
 import java.io.InputStream
 import java.util.concurrent.LinkedBlockingQueue
 
+import org.apache.spark.storage.ShuffleBlockFetcherIterator.FetchRequest
+
 import scala.collection.mutable.{ArrayBuffer, HashSet, Queue}
 import scala.util.control.NonFatal
 
@@ -53,7 +55,10 @@ final class ShuffleBlockFetcherIterator(
     shuffleClient: ShuffleClient,
     blockManager: BlockManager,
     blocksByAddress: Seq[(BlockManagerId, Seq[(BlockId, Long)])],
-    maxBytesInFlight: Long)
+    maxBytesInFlight: Long,
+    isCached: Boolean = false,
+    requestResults: Array[LinkedBlockingQueue[ShuffleBlockFetcherIterator.FetchResult]] = null,
+    requestBlockNumber: Array[Int] = null)
   extends Iterator[(BlockId, InputStream)] with Logging {
 
   import ShuffleBlockFetcherIterator._
@@ -108,6 +113,18 @@ final class ShuffleBlockFetcherIterator(
    * longer place fetched blocks into [[results]].
    */
   @volatile private[this] var isZombie = false
+
+
+  // added by frankfzw to read from cache
+  private[this] val _isCached = isCached
+
+  private[this] val _requestResults = requestResults.toIterator
+
+  private[this] val _requestBlockNumber = requestBlockNumber.toIterator
+
+  private[this] var currentWaitingQueue: LinkedBlockingQueue[FetchResult] = null
+
+  private[this] var currentWaitingNumber = 0
 
   initialize()
 
@@ -264,11 +281,17 @@ final class ShuffleBlockFetcherIterator(
 
     // Split local and remote blocks.
     val remoteRequests = splitLocalRemoteBlocks()
-    // Add the remote requests into our queue in a random order
-    fetchRequests ++= Utils.randomize(remoteRequests)
 
-    // Send out initial requests for blocks, up to our maxBytesInFlight
-    fetchUpToMaxBytes()
+    // added by frankfzw
+    if (!_isCached) {
+      // Add the remote requests into our queue in a random order
+      fetchRequests ++= Utils.randomize(remoteRequests)
+      // Send out initial requests for blocks, up to our maxBytesInFlight
+      fetchUpToMaxBytes()
+    } else {
+      currentWaitingQueue = results
+      currentWaitingNumber = localBlocks.size
+    }
 
     val numFetches = remoteRequests.size - fetchRequests.size
     logInfo("Started " + numFetches + " remote fetches in" + Utils.getUsedTimeMs(startTime))
@@ -289,9 +312,16 @@ final class ShuffleBlockFetcherIterator(
    * Throws a FetchFailedException if the next block could not be fetched.
    */
   override def next(): (BlockId, InputStream) = {
+    if (currentWaitingNumber == 0) {
+      if (!_requestBlockNumber.hasNext)
+        throw new SparkException("frankfzw: The fetch is over")
+      currentWaitingNumber = _requestBlockNumber.next
+      currentWaitingQueue = _requestResults.next
+    }
     numBlocksProcessed += 1
+    currentWaitingNumber -= 1
     val startFetchWait = System.currentTimeMillis()
-    currentResult = results.take()
+    currentResult = currentWaitingQueue.take()
     val result = currentResult
     val stopFetchWait = System.currentTimeMillis()
     shuffleMetrics.incFetchWaitTime(stopFetchWait - startFetchWait)
@@ -335,6 +365,7 @@ final class ShuffleBlockFetcherIterator(
     }
   }
 }
+
 
 /**
  * Helper class that ensures a ManagedBuffer is release upon InputStream.close()

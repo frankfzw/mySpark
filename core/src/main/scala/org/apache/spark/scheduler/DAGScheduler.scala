@@ -982,7 +982,8 @@ class DAGScheduler(
       logDebug("submitStage(" + stage + ")")
       if (!waitingStages(stage) && !runningStages(stage) && !failedStages(stage)) {
         val missing = getMissingParentStages(stage).sortBy(_.id)
-        if (missing.isEmpty || missing.filter(x => !runningStages.contains(x)).isEmpty) {
+        // if (missing.isEmpty || missing.filter(x => !runningStages.contains(x)).isEmpty) {
+        if (missing.isEmpty) {
           submitMissingTasks(stage, jobId.get)
         } else {
           // stage.PENDING = true;
