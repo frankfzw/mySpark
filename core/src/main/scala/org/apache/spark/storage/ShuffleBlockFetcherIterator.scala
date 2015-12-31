@@ -229,7 +229,7 @@ final class ShuffleBlockFetcherIterator(
             remoteBlocks += blockId
             numBlocksToFetch += 1
             curRequestSize += size
-          } else if (size < 0) {
+          } else if (size < 0 && !isCached) {
             throw new BlockException(blockId, "Negative block size " + size)
           }
           if (curRequestSize >= targetRequestSize) {
@@ -246,7 +246,7 @@ final class ShuffleBlockFetcherIterator(
         }
       }
     }
-    logInfo(s"Getting $numBlocksToFetch non-empty blocks out of $totalBlocks blocks")
+    // logInfo(s"Getting $numBlocksToFetch non-empty blocks out of $totalBlocks blocks")
     remoteRequests
   }
 
@@ -259,6 +259,8 @@ final class ShuffleBlockFetcherIterator(
     val iter = localBlocks.iterator
     while (iter.hasNext) {
       val blockId = iter.next()
+      while (isCached && (blockManager.shuffleFetchBlockIdToSize(blockId) == blockManager.BLOCK_PENDING))
+        Thread.sleep(2)
       try {
         val buf = blockManager.getBlockData(blockId)
         shuffleMetrics.incLocalBlocksFetched(1)
@@ -289,6 +291,8 @@ final class ShuffleBlockFetcherIterator(
       // Send out initial requests for blocks, up to our maxBytesInFlight
       fetchUpToMaxBytes()
     } else {
+      numBlocksToFetch = 0
+      requestBlockNumber.foreach(numBlocksToFetch += _)
       currentWaitingQueue = results
       currentWaitingNumber = localBlocks.size
     }
@@ -331,15 +335,19 @@ final class ShuffleBlockFetcherIterator(
       case _ =>
     }
     // Send fetch requests up to maxBytesInFlight
-    fetchUpToMaxBytes()
+    // fetchUpToMaxBytes()
 
     result match {
       case FailureFetchResult(blockId, address, e) =>
         throwFetchFailedException(blockId, address, e)
 
-      case SuccessFetchResult(blockId, address, _, buf) =>
+      case SuccessFetchResult(blockId, address, size, buf) =>
         try {
-          (result.blockId, new BufferReleasingInputStream(buf.createInputStream(), this))
+          if (buf == null) {
+            (result.blockId, null)
+          } else {
+            (result.blockId, new BufferReleasingInputStream(buf.createInputStream(), this))
+          }
         } catch {
           case NonFatal(t) =>
             throwFetchFailedException(blockId, address, t)

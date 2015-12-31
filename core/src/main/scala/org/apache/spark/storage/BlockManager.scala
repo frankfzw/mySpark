@@ -177,9 +177,12 @@ private[spark] class BlockManager(
 
   private val shuffleFetchResultQueue: HashMap[Int, Array[LinkedBlockingQueue[FetchResult]]] = new HashMap
 
-  private val shuffleFetchBlockNumber: HashMap[Int, Array[Int]] = new HashMap
+  val shuffleFetchBlockIdToSize: HashMap[BlockId, Long] = new HashMap
 
   val cachedExeIdToBlockManagerId: HashMap[String, BlockManagerId] = new HashMap
+
+  final val BLOCK_PENDING = -1
+  final val BLOCK_EMPTY = -2
 
   /**
    * added by frankfzw
@@ -225,7 +228,6 @@ private[spark] class BlockManager(
     if (!shuffleDataCache.contains(shuffleId)) {
       val cacheArray = new Array[Array[(String, Long)]](totalReducePartition)
       shuffleDataCache += (shuffleId -> cacheArray.map(x => new Array[(String, Long)](totalMapPartiton)))
-      shuffleFetchBlockNumber += (shuffleId -> Array.fill[Int](totalReducePartition)(0))
       shuffleFetchResultQueue += (shuffleId -> new Array[LinkedBlockingQueue[FetchResult]](totalReducePartition))
       // logInfo(s"frankfzw: Shuffle registerd: id: ${shuffleId}, reduce partition: ${reducePartition}, lock: ${shuffleCacheStatus(shuffleId)(reducePartition)}, buffer: ${shuffleDataCache(shuffleId)(reducePartition)}")
     }
@@ -275,7 +277,8 @@ private[spark] class BlockManager(
   def pipeStart(shuffleId: Int, mapPartition: Int, mapExecutorId: String, reducePartition: Int): Boolean = {
     if (shuffleDataCache.contains(shuffleId)) {
       logInfo(s"frankfzw: The map partition ${mapPartition} of shuffle ${shuffleId}  for reduce partition ${reducePartition} starts on ${mapExecutorId}")
-      shuffleDataCache(shuffleId)(reducePartition)(mapPartition) = (mapExecutorId, -1)
+      shuffleFetchBlockIdToSize += (ShuffleBlockId(shuffleId, mapPartition, reducePartition) -> BLOCK_PENDING)
+      shuffleDataCache(shuffleId)(reducePartition)(mapPartition) = (mapExecutorId, BLOCK_PENDING)
       true
     } else {
       throw new SparkException(s"frankfzw: The shuffle ${shuffleId} is not registered")
@@ -292,10 +295,12 @@ private[spark] class BlockManager(
    */
   def pipeEnd(shuffleId: Int, mapPartition: Int, reducePartition: Int, size: Long): Boolean = {
     if (shuffleDataCache.contains(shuffleId)) {
+      val newSize = if (size == 0) BLOCK_EMPTY else size
       val eId = shuffleDataCache(shuffleId)(reducePartition)(mapPartition)._1
-      shuffleDataCache(shuffleId)(reducePartition)(mapPartition) = (eId, size)
+      shuffleDataCache(shuffleId)(reducePartition)(mapPartition) = (eId, newSize)
+      shuffleFetchBlockIdToSize.update(ShuffleBlockId(shuffleId, mapPartition, reducePartition), newSize)
       logInfo(s"frankfzw: The map partition ${mapPartition} of shuffle ${shuffleId}  for reduce partition ${reducePartition} finished on ${eId}, size: ${size}")
-      shuffleFetchBlockNumber(shuffleId)(reducePartition) += sendRequest(eId, shuffleId, mapPartition, reducePartition, size)
+      sendRequest(eId, shuffleId, mapPartition, reducePartition, newSize)
       true
     } else {
       throw new SparkException(s"frankfzw: The shuffle ${shuffleId} is not registered")
@@ -315,30 +320,35 @@ private[spark] class BlockManager(
   private def sendRequest(exeId: String, shuffleId: Int, mapId: Int, reduceId: Int, size: Long): Int = {
     val blockArray = new Array[(BlockId, Long)](1)
     blockArray(0) = (ShuffleBlockId(shuffleId, mapId, reduceId), size)
-    if (!(exeId == blockManagerId.executorId) && size > 0) {
+    if (!(exeId == blockManagerId.executorId)) {
+      logInfo(s"frankfzw: Send pending request for shuffle: ${shuffleId}:${mapId}:${reduceId} at ${exeId}. Size ${size}")
       if (!cachedExeIdToBlockManagerId.contains(exeId)) {
         cachedExeIdToBlockManagerId += (exeId -> getRemoteBlockManagerId(exeId))
       }
       val address = cachedExeIdToBlockManagerId(exeId)
       val sizeMap = blockArray.map { case (block, size) => (block.toString, size) }.toMap
       val blockIds = blockArray.map(_._1.toString)
-      shuffleClient.fetchBlocks(address.host, address.port, address.executorId, blockIds.toArray,
-        new BlockFetchingListener {
-          override def onBlockFetchSuccess(blockId: String, buf: ManagedBuffer): Unit = {
-            buf.retain()
-            shuffleFetchResultQueue(shuffleId)(reduceId).put(new SuccessFetchResult(BlockId(blockId), address, sizeMap(blockId), buf))
-            logTrace("frankfzw: Got remote block " + blockId)
-          }
+      if (size == BLOCK_EMPTY) {
+        shuffleFetchResultQueue(shuffleId)(reduceId).put(new SuccessFetchResult(BlockId(blockArray(0).toString()), address, BLOCK_EMPTY, null))
+      } else {
+        shuffleClient.fetchBlocks(address.host, address.port, address.executorId, blockIds.toArray,
+          new BlockFetchingListener {
+            override def onBlockFetchSuccess(blockId: String, buf: ManagedBuffer): Unit = {
+              buf.retain()
+              shuffleFetchResultQueue(shuffleId)(reduceId).put(new SuccessFetchResult(BlockId(blockId), address, sizeMap(blockId), buf))
+              logTrace("frankfzw: Got remote block " + blockId)
+            }
 
-          override def onBlockFetchFailure(blockId: String, e: Throwable): Unit = {
-            logError(s"frankfzw: Failed to get block(s) from ${address.host}:${address.port}", e)
-            shuffleFetchResultQueue(shuffleId)(reduceId).put(new FailureFetchResult(BlockId(blockId), address, e))
+            override def onBlockFetchFailure(blockId: String, e: Throwable): Unit = {
+              logError(s"frankfzw: Failed to get block(s) from ${address.host}:${address.port}", e)
+              shuffleFetchResultQueue(shuffleId)(reduceId).put(new FailureFetchResult(BlockId(blockId), address, e))
+            }
           }
-        }
-      )
-      1
+        )
+        return 1
+      }
     }
-    0
+    return 0
   }
 
   /**
@@ -349,14 +359,14 @@ private[spark] class BlockManager(
    * @param endPartition the end partition number of reduce, exclude
    * @return the FetchResult of remote data fetch
    */
-  def getPendngFetchRequest(shuffleId: Int, startPartition: Int, endPartition: Int): (Array[LinkedBlockingQueue[FetchResult]], Array[Int]) = {
+  def getPendngFetchRequest(shuffleId: Int, startPartition: Int, endPartition: Int): Array[LinkedBlockingQueue[FetchResult]] = {
     val buffer = new Array[LinkedBlockingQueue[FetchResult]](endPartition - startPartition)
-    val number = new Array[Int](endPartition - startPartition)
+    // val number = new Array[Int](endPartition - startPartition)
     for (i <- startPartition until endPartition) {
       buffer(i - startPartition) = shuffleFetchResultQueue(shuffleId)(i)
-      number(i - startPartition) = shuffleFetchBlockNumber(shuffleId)(i)
+      //number(i - startPartition) = shuffleFetchBlockNumber(shuffleId)(i)
     }
-    (buffer, number)
+    buffer
   }
   /**
    * Initializes the BlockManager with the given appId. This is not performed in the constructor as

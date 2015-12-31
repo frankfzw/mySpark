@@ -60,8 +60,9 @@ private[spark] class BlockStoreShuffleReader[K, C](
       fromCache = true
       logInfo(s"frankfzw: Reading from local cache, shuffleId is ${handle.shuffleId}, startPartition: ${startPartition}, endPartition: ${endPartition}")
       val temp = new mutable.HashMap[BlockManagerId, ArrayBuffer[(BlockId, Long)]]
+      val totalMapPartition = blockManager.getMapPartitionNumber(handle.shuffleId, startPartition)
+      val numbers = Array.fill[Int](endPartition - startPartition)(totalMapPartition)
       for (rId <- startPartition until endPartition) {
-        val totalMapPartition = blockManager.getMapPartitionNumber(handle.shuffleId, rId)
         for (mId <- 0 until totalMapPartition) {
           val (exeId, size) = blockManager.getCache(handle.shuffleId, rId, mId)
           if (!blockManager.cachedExeIdToBlockManagerId.contains(exeId)) {
@@ -71,7 +72,7 @@ private[spark] class BlockStoreShuffleReader[K, C](
           temp.getOrElseUpdate(blockManager.cachedExeIdToBlockManagerId(exeId), ArrayBuffer()) += ((ShuffleBlockId(handle.shuffleId, mId, rId), size))
         }
       }
-      val (requests, numbers) = blockManager.getPendngFetchRequest(handle.shuffleId, startPartition, endPartition)
+      val requests = blockManager.getPendngFetchRequest(handle.shuffleId, startPartition, endPartition)
       blockFetcherItr = new ShuffleBlockFetcherIterator(
       context,
       blockManager.shuffleClient,
@@ -94,7 +95,7 @@ private[spark] class BlockStoreShuffleReader[K, C](
         return null
     }
     // Wrap the streams for compression based on configuration
-    val wrappedStreams = blockFetcherItr.map { case (blockId, inputStream) =>
+    val wrappedStreams = blockFetcherItr.filter { case (blockId, inputStream) => inputStream != null}.map { case (blockId, inputStream) =>
       blockManager.wrapForCompression(blockId, inputStream)
     }
 
