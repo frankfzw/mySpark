@@ -59,25 +59,27 @@ private[spark] class BlockStoreShuffleReader[K, C](
     if (blockManager.isCached(handle.shuffleId)) {
       fromCache = true
       logInfo(s"frankfzw: Reading from local cache, shuffleId is ${handle.shuffleId}, startPartition: ${startPartition}, endPartition: ${endPartition}")
-      val temp = new mutable.HashMap[BlockManagerId, ArrayBuffer[(BlockId, Long)]]
+      // val temp = new mutable.HashMap[BlockManagerId, ArrayBuffer[(BlockId, Long)]]
       val totalMapPartition = blockManager.getMapPartitionNumber(handle.shuffleId, startPartition)
       val numbers = Array.fill[Int](endPartition - startPartition)(totalMapPartition)
-      for (rId <- startPartition until endPartition) {
-        for (mId <- 0 until totalMapPartition) {
-          val (exeId, size) = blockManager.getCache(handle.shuffleId, rId, mId)
-          if (!blockManager.cachedExeIdToBlockManagerId.contains(exeId)) {
-            val blockManagerId = blockManager.getRemoteBlockManagerId(exeId)
-            blockManager.cachedExeIdToBlockManagerId.put(exeId, blockManagerId)
-          }
-          temp.getOrElseUpdate(blockManager.cachedExeIdToBlockManagerId(exeId), ArrayBuffer()) += ((ShuffleBlockId(handle.shuffleId, mId, rId), size))
-        }
-      }
+      // for (rId <- startPartition until endPartition) {
+      //   for (mId <- 0 until totalMapPartition) {
+      //     while (blockManager.getCache(handle.shuffleId, rId, mId) == null)
+      //       Thread.sleep(1)
+      //     val (exeId, size) = blockManager.getCache(handle.shuffleId, rId, mId)
+      //     if (!blockManager.cachedExeIdToBlockManagerId.contains(exeId)) {
+      //       val blockManagerId = blockManager.getRemoteBlockManagerId(exeId)
+      //       blockManager.cachedExeIdToBlockManagerId.put(exeId, blockManagerId)
+      //     }
+      //     temp.getOrElseUpdate(blockManager.cachedExeIdToBlockManagerId(exeId), ArrayBuffer()) += ((ShuffleBlockId(handle.shuffleId, mId, rId), size))
+      //   }
+      // }
       val requests = blockManager.getPendngFetchRequest(handle.shuffleId, startPartition, endPartition)
       blockFetcherItr = new ShuffleBlockFetcherIterator(
       context,
       blockManager.shuffleClient,
       blockManager,
-      temp.toSeq,
+      null,
       // Note: we use getSizeAsMb when no suffix is provided for backwards compatibility
       SparkEnv.get.conf.getSizeAsMb("spark.reducer.maxSizeInFlight", "48m") * 1024 * 1024,
       true, requests, numbers)

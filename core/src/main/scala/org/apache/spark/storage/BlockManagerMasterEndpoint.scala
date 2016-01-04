@@ -157,7 +157,7 @@ class BlockManagerMasterEndpoint(
     if (blockManagerIdByExecutor.contains(executorId)) {
       val blockManagerId = blockManagerIdByExecutor(executorId)
       if (blockManagerInfo.contains(blockManagerId)) {
-        logInfo(s"frankfzw: getRemoteBlockManager: executorId: ${executorId}, blockManagerId: ${blockManagerId}")
+        // logInfo(s"frankfzw: getRemoteBlockManager: executorId: ${executorId}, blockManagerId: ${blockManagerId}")
         blockManagerInfo(blockManagerId).slaveEndpoint
       } else {
         throw new IllegalArgumentException(s"Missing blockManagerId ${blockManagerId} in blockManagerInfo")

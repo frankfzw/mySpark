@@ -254,7 +254,10 @@ private[spark] class BlockManager(
    * @return the executor of target blockmanager and the block size
    */
   def getCache(shuffleId: Int, reducePartition: Int, mapPartition: Int): (String, Long) = {
-    shuffleDataCache(shuffleId)(reducePartition)(mapPartition)
+    val ret = shuffleDataCache(shuffleId)(reducePartition)(mapPartition)
+    if (ret._1 == null)
+      logInfo(s"frankfzw: Map ${mapPartition} for Reduce ${reducePartition} of ${shuffleId} didn't started")
+    ret
   }
 
   /**
@@ -346,6 +349,25 @@ private[spark] class BlockManager(
           }
         )
         return 1
+      }
+    } else {
+      val blockId = ShuffleBlockId(shuffleId, mapId, reduceId)
+      if (size == BLOCK_EMPTY) {
+        shuffleFetchResultQueue(shuffleId)(reduceId).put(new SuccessFetchResult(BlockId(blockArray(0).toString()), blockManagerId, BLOCK_EMPTY, null))
+        return 1
+      } else {
+        try {
+          val buf = getBlockData(blockId)
+          buf.retain()
+          shuffleFetchResultQueue(shuffleId)(reduceId).put(new SuccessFetchResult(blockId, blockManagerId, size, buf))
+          return 1
+        } catch {
+          case e: Exception =>
+            // If we see an exception, stop immediately.
+            logError(s"Error occurred while fetching local blocks", e)
+            shuffleFetchResultQueue(shuffleId)(reduceId).put(new FailureFetchResult(blockId, blockManagerId, e))
+            return 0
+        }
       }
     }
     return 0

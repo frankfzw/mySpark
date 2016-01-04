@@ -144,7 +144,9 @@ final class ShuffleBlockFetcherIterator(
    * @return true if the map isn't ready
    */
   def empty(): Boolean = {
-    blocksByAddress.length == 0
+    if (blocksByAddress != null)
+      blocksByAddress.length == 0
+    else false
   }
   /**
    * Mark the iterator as zombie, and release all buffers that haven't been deserialized yet.
@@ -281,28 +283,29 @@ final class ShuffleBlockFetcherIterator(
     // Add a task completion callback (called in both success case and failure case) to cleanup.
     context.addTaskCompletionListener(_ => cleanup())
 
-    // Split local and remote blocks.
-    val remoteRequests = splitLocalRemoteBlocks()
 
     // added by frankfzw
     if (!_isCached) {
+      // Split local and remote blocks.
+      val remoteRequests = splitLocalRemoteBlocks()
       // Add the remote requests into our queue in a random order
       fetchRequests ++= Utils.randomize(remoteRequests)
       // Send out initial requests for blocks, up to our maxBytesInFlight
       fetchUpToMaxBytes()
+      val numFetches = remoteRequests.size - fetchRequests.size
+      logInfo("Started " + numFetches + " remote fetches in" + Utils.getUsedTimeMs(startTime))
+
+      // Get Local Blocks
+      fetchLocalBlocks()
+      logDebug("Got local blocks in " + Utils.getUsedTimeMs(startTime))
     } else {
       numBlocksToFetch = 0
       requestBlockNumber.foreach(numBlocksToFetch += _)
-      currentWaitingQueue = results
-      currentWaitingNumber = localBlocks.size
+      currentWaitingQueue = _requestResults.next
+      currentWaitingNumber = _requestBlockNumber.next
+      logInfo("Started " + numBlocksToFetch + " fetches in" + Utils.getUsedTimeMs(startTime))
     }
 
-    val numFetches = remoteRequests.size - fetchRequests.size
-    logInfo("Started " + numFetches + " remote fetches in" + Utils.getUsedTimeMs(startTime))
-
-    // Get Local Blocks
-    fetchLocalBlocks()
-    logDebug("Got local blocks in " + Utils.getUsedTimeMs(startTime))
   }
 
   override def hasNext: Boolean = numBlocksProcessed < numBlocksToFetch
@@ -346,6 +349,13 @@ final class ShuffleBlockFetcherIterator(
           if (buf == null) {
             (result.blockId, null)
           } else {
+            if (address == blockManager.blockManagerId) {
+              shuffleMetrics.incLocalBlocksFetched(1)
+              shuffleMetrics.incLocalBytesRead(buf.size)
+            } else {
+              shuffleMetrics.incRemoteBlocksFetched(1)
+              shuffleMetrics.incRemoteBytesRead(buf.size)
+            }
             (result.blockId, new BufferReleasingInputStream(buf.createInputStream(), this))
           }
         } catch {
