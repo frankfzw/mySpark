@@ -23,7 +23,7 @@ import java.util.concurrent.{LinkedBlockingQueue, CountDownLatch}
 
 import org.apache.spark.scheduler.ReduceStatus
 import org.apache.spark.storage.BlockManagerMessages._
-import org.apache.spark.storage.ShuffleBlockFetcherIterator.{FailureFetchResult, SuccessFetchResult, FetchResult}
+import org.apache.spark.storage.ShuffleBlockFetcherIterator._
 
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 import scala.collection.concurrent.TrieMap
@@ -332,7 +332,7 @@ private[spark] class BlockManager(
       val sizeMap = blockArray.map { case (block, size) => (block.toString, size) }.toMap
       val blockIds = blockArray.map(_._1.toString)
       if (size == BLOCK_EMPTY) {
-        shuffleFetchResultQueue(shuffleId)(reduceId).put(new SuccessFetchResult(BlockId(blockArray(0).toString()), address, BLOCK_EMPTY, null))
+        shuffleFetchResultQueue(shuffleId)(reduceId).put(new EmptyFetchResult(BlockId(blockIds(0)), address))
       } else {
         shuffleClient.fetchBlocks(address.host, address.port, address.executorId, blockIds.toArray,
           new BlockFetchingListener {
@@ -353,21 +353,11 @@ private[spark] class BlockManager(
     } else {
       val blockId = ShuffleBlockId(shuffleId, mapId, reduceId)
       if (size == BLOCK_EMPTY) {
-        shuffleFetchResultQueue(shuffleId)(reduceId).put(new SuccessFetchResult(BlockId(blockArray(0).toString()), blockManagerId, BLOCK_EMPTY, null))
+        shuffleFetchResultQueue(shuffleId)(reduceId).put(new EmptyFetchResult(blockId, blockManagerId))
         return 1
       } else {
-        try {
-          val buf = getBlockData(blockId)
-          buf.retain()
-          shuffleFetchResultQueue(shuffleId)(reduceId).put(new SuccessFetchResult(blockId, blockManagerId, size, buf))
-          return 1
-        } catch {
-          case e: Exception =>
-            // If we see an exception, stop immediately.
-            logError(s"Error occurred while fetching local blocks", e)
-            shuffleFetchResultQueue(shuffleId)(reduceId).put(new FailureFetchResult(blockId, blockManagerId, e))
-            return 0
-        }
+        shuffleFetchResultQueue(shuffleId)(reduceId).put(new LocalFetchResult(blockId, blockManagerId, size))
+        return 1
       }
     }
     return 0

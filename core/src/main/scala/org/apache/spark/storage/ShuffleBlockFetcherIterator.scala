@@ -333,10 +333,10 @@ final class ShuffleBlockFetcherIterator(
     val stopFetchWait = System.currentTimeMillis()
     shuffleMetrics.incFetchWaitTime(stopFetchWait - startFetchWait)
 
-    result match {
-      case SuccessFetchResult(_, _, size, _) => bytesInFlight -= size
-      case _ =>
-    }
+    // result match {
+    //   case SuccessFetchResult(_, _, size, _) => bytesInFlight -= size
+    //   case _ =>
+    // }
     // Send fetch requests up to maxBytesInFlight
     // fetchUpToMaxBytes()
 
@@ -344,20 +344,26 @@ final class ShuffleBlockFetcherIterator(
       case FailureFetchResult(blockId, address, e) =>
         throwFetchFailedException(blockId, address, e)
 
+      case EmptyFetchResult(blockId, address) =>
+        (blockId, null)
+
+      case LocalFetchResult(blockId, address, size) =>
+        try {
+          val buf = blockManager.getBlockData(blockId)
+          shuffleMetrics.incLocalBlocksFetched(1)
+          shuffleMetrics.incLocalBytesRead(buf.size)
+          buf.retain()
+          (blockId, new BufferReleasingInputStream(buf.createInputStream(), this))
+        } catch {
+          case NonFatal(t) =>
+            throwFetchFailedException(blockId, address, t)
+        }
+
       case SuccessFetchResult(blockId, address, size, buf) =>
         try {
-          if (buf == null) {
-            (result.blockId, null)
-          } else {
-            if (address == blockManager.blockManagerId) {
-              shuffleMetrics.incLocalBlocksFetched(1)
-              shuffleMetrics.incLocalBytesRead(buf.size)
-            } else {
-              shuffleMetrics.incRemoteBlocksFetched(1)
-              shuffleMetrics.incRemoteBytesRead(buf.size)
-            }
+            shuffleMetrics.incRemoteBlocksFetched(1)
+            shuffleMetrics.incRemoteBytesRead(buf.size)
             (result.blockId, new BufferReleasingInputStream(buf.createInputStream(), this))
-          }
         } catch {
           case NonFatal(t) =>
             throwFetchFailedException(blockId, address, t)
@@ -468,5 +474,16 @@ object ShuffleBlockFetcherIterator {
       blockId: BlockId,
       address: BlockManagerId,
       e: Throwable)
+    extends FetchResult
+
+  private[storage] case class EmptyFetchResult(
+      blockId: BlockId,
+      address: BlockManagerId)
+    extends FetchResult
+
+  private[storage] case class LocalFetchResult(
+      blockId: BlockId,
+      address: BlockManagerId,
+      size: Long)
     extends FetchResult
 }
