@@ -476,11 +476,24 @@ object ShuffleBlockFetcherIterator {
       e: Throwable)
     extends FetchResult
 
+  /**
+   * added by frankfzw
+   * Result of a empty block fetch
+   * @param blockId block id
+   * @param address BlockManager that the block was attempted to be fetched from
+   */
   private[storage] case class EmptyFetchResult(
       blockId: BlockId,
       address: BlockManagerId)
     extends FetchResult
 
+  /**
+   * added by frankfzw
+   * Result of a fetch from a local block
+   * @param blockId block id
+   * @param address BlockManager that the block was attempted to be fetched from
+   * @param size estimated size of the block
+   */
   private[storage] case class LocalFetchResult(
       blockId: BlockId,
       address: BlockManagerId,

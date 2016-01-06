@@ -17,7 +17,9 @@
 
 package org.apache.spark.storage
 
-import scala.collection.Iterable
+import org.apache.spark.scheduler.ReduceStatus
+
+import scala.collection.{mutable, Iterable}
 import scala.collection.generic.CanBuildFrom
 import scala.concurrent.{Await, Future}
 
@@ -35,6 +37,8 @@ class BlockManagerMaster(
 
   val timeout = RpcUtils.askRpcTimeout(conf)
 
+  val executorIdToRpcEndpointRef = new mutable.HashMap[String, RpcEndpointRef]
+
   /** Remove a dead executor from the driver endpoint. This is only called on the driver side. */
   def removeExecutor(execId: String) {
     tell(RemoveExecutor(execId))
@@ -48,7 +52,23 @@ class BlockManagerMaster(
    * @return
    */
   def getRemoteBlockManager(executorId: String): RpcEndpointRef = {
-    driverEndpoint.askWithRetry[RpcEndpointRef](AskForRemoteBlockManager(executorId))
+    if (!executorIdToRpcEndpointRef.contains(executorId)) {
+      val ref = driverEndpoint.askWithRetry[RpcEndpointRef](AskForRemoteBlockManager(executorId))
+      executorIdToRpcEndpointRef.synchronized {
+        executorIdToRpcEndpointRef.getOrElseUpdate(executorId, ref)
+      }
+    }
+    executorIdToRpcEndpointRef(executorId)
+  }
+
+  def registerShufflePipe(shuffleId: Int, reduceStatuses: Array[ReduceStatus]): Unit = {
+    val executors = new mutable.HashSet[String]()
+    for (rs <- reduceStatuses)
+      executors += rs.executorId
+    for (e <- executors) {
+      val rpcRef = getRemoteBlockManager(e)
+      rpcRef.askWithRetry[Boolean](RegisterShufflePipe(shuffleId))
+    }
   }
 
   /**

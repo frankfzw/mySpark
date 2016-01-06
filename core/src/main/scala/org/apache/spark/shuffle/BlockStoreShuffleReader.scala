@@ -58,22 +58,10 @@ private[spark] class BlockStoreShuffleReader[K, C](
     var blockFetcherItr: ShuffleBlockFetcherIterator = null
     if (blockManager.isCached(handle.shuffleId)) {
       fromCache = true
-      logInfo(s"frankfzw: Reading from local cache, shuffleId is ${handle.shuffleId}, startPartition: ${startPartition}, endPartition: ${endPartition}")
       // val temp = new mutable.HashMap[BlockManagerId, ArrayBuffer[(BlockId, Long)]]
-      val totalMapPartition = blockManager.getMapPartitionNumber(handle.shuffleId, startPartition)
+      val totalMapPartition = blockManager.getMapPartitionNumber(handle.shuffleId)
       val numbers = Array.fill[Int](endPartition - startPartition)(totalMapPartition)
-      // for (rId <- startPartition until endPartition) {
-      //   for (mId <- 0 until totalMapPartition) {
-      //     while (blockManager.getCache(handle.shuffleId, rId, mId) == null)
-      //       Thread.sleep(1)
-      //     val (exeId, size) = blockManager.getCache(handle.shuffleId, rId, mId)
-      //     if (!blockManager.cachedExeIdToBlockManagerId.contains(exeId)) {
-      //       val blockManagerId = blockManager.getRemoteBlockManagerId(exeId)
-      //       blockManager.cachedExeIdToBlockManagerId.put(exeId, blockManagerId)
-      //     }
-      //     temp.getOrElseUpdate(blockManager.cachedExeIdToBlockManagerId(exeId), ArrayBuffer()) += ((ShuffleBlockId(handle.shuffleId, mId, rId), size))
-      //   }
-      // }
+      logInfo(s"frankfzw: Reading from local cache, shuffleId is ${handle.shuffleId}, startPartition: ${startPartition}, endPartition: ${endPartition}, total map partition: ${totalMapPartition}")
       val requests = blockManager.getPendngFetchRequest(handle.shuffleId, startPartition, endPartition)
       blockFetcherItr = new ShuffleBlockFetcherIterator(
       context,

@@ -20,6 +20,7 @@ package org.apache.spark.storage
 import java.io.{Externalizable, ObjectInput, ObjectOutput}
 
 import org.apache.spark.rpc.RpcEndpointRef
+import org.apache.spark.scheduler.ReduceStatus
 import org.apache.spark.util.Utils
 
 private[spark] object BlockManagerMessages {
@@ -119,9 +120,9 @@ private[spark] object BlockManagerMessages {
 
   case class WriteRemote(shuffleId: Int, reduceId: Int, key: Any, value: Any) extends ToBlockManagerSlave
 
-  case class RegisterShufflePipe(shuffleId: Int, totalMapPartition: Int, reducePartition: Int, totalReducePartiton: Int) extends ToBlockManagerSlave
+  case class RegisterShufflePipe(shuffleId: Int) extends ToBlockManagerSlave
 
   case class PipeStart(shuffleId: Int, mapPartition: Int, mapExecutorId:String, reducePartition: Int) extends  ToBlockManagerSlave
 
-  case class PipeEnd(shuffleId: Int, mapPartition: Int, reducePartition: Int, size: Long) extends ToBlockManagerSlave
+  case class PipeEnd(shuffleId: Int, mapPartition: Int, location: BlockManagerId, sizeArray: Array[Long]) extends ToBlockManagerSlave
 }

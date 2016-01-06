@@ -31,7 +31,7 @@ import scala.util.control.NonFatal
 
 import org.apache.spark._
 import org.apache.spark.deploy.SparkHadoopUtil
-import org.apache.spark.scheduler.{ShuffleMapTask, DirectTaskResult, IndirectTaskResult, Task}
+import org.apache.spark.scheduler._
 import org.apache.spark.shuffle.FetchFailedException
 import org.apache.spark.storage.{BlockManagerInfo, StorageLevel, TaskResultBlockId}
 import org.apache.spark.unsafe.memory.TaskMemoryManager
@@ -189,7 +189,6 @@ private[spark] class Executor(
       execBackend.statusUpdate(taskId, TaskState.RUNNING, EMPTY_BYTE_BUFFER)
       var taskStart: Long = 0
       startGCTime = computeTotalGcTime()
-      var reduceIdToBlockManagerInfo:HashMap[Int, RpcEndpointRef] = null
 
       try {
         val (taskFiles, taskJars, taskBytes) = Task.deserializeWithDependencies(serializedTask)
@@ -199,34 +198,6 @@ private[spark] class Executor(
 
         // TODO frankfzw find out what kind of task it is and the shuffleId if necessary
         // logInfo("frankfzw: task type " + task.getClass.getName + " target: " + ShuffleMapTask.getName() + " compare result: " + (task.getClass.getName == ShuffleMapTask.getName()))
-
-        if (task.getClass.getName == ShuffleMapTask.getName()) {
-          // check the shuffleId
-          // if it's not -1, find the reducer and do the data pushing
-          val shuffleId = task.asInstanceOf[ShuffleMapTask].getShuffleId()
-          if (shuffleId != -1) {
-            // TODO
-            // logInfo(s"frankfzw: task: ${task}; shuffleId: ${shuffleId}")
-            val reduceStatuses = env.mapOutputTracker.getReduceStatuses(shuffleId)
-            // TODO what if reduceStatuses is null
-            if (reduceStatuses != null && reduceStatuses.length != 0) {
-              reduceIdToBlockManagerInfo = new HashMap[Int, RpcEndpointRef]()
-              // reduceStatuses.foreach {
-              //   rs =>
-              //     val blockManagerInfo = env.blockManager.getRemoteBlockManager(rs.blockManagerId)
-              //     logInfo(s"frankfzw: The remote BlockManger ID: ${rs.blockManagerId}; reduce ID: ${rs.partition} is ${blockManagerInfo.address}, it has ${rs.getTotalMapPartiton()} partition")
-              //     reduceIdToBlockManagerInfo += (rs.partition -> blockManagerInfo)
-              // }
-              var blockManagerInfo: RpcEndpointRef = null
-              for (rs <- reduceStatuses) {
-                blockManagerInfo = env.blockManager.getRemoteBlockManager(rs.executorId)
-                // logInfo(s"frankfzw: Task ${taskId}: The remote BlockManger ID: ${rs.blockManagerId}; reduce ID: ${rs.partition} is ${blockManagerInfo.address}, it has ${rs.getTotalMapPartiton()} partition")
-                reduceIdToBlockManagerInfo += (rs.partition -> blockManagerInfo)
-              }
-              task.asInstanceOf[ShuffleMapTask].setPipeFlag(reduceIdToBlockManagerInfo, env.blockManager.blockManagerId.executorId)
-            }
-          }
-        }
 
         // If this task has been killed before we deserialized it, let's quit now. Otherwise,
         // continue executing the task.
@@ -269,6 +240,16 @@ private[spark] class Executor(
           throw new TaskKilledException
         }
 
+        // added by frankfzw
+        // pipe shuffle ended here
+        // logInfo(s"frankfzw: task ${taskId}, ${task.getClass}, ${task.getClass.getName}. target: ${ShuffleMapTask.getClass.getName}. answer ${task.getClass.getName == ShuffleMapTask.getClass.getName}")
+        if (task.getClass.getName == ShuffleMapTask.getName) {
+          val shuffleId = task.asInstanceOf[ShuffleMapTask].getShuffleId()
+          if (shuffleId != -1) {
+            // logInfo(s"frankfzw: task: ${task}; shuffleId: ${shuffleId}")
+            env.blockManager.remotePipeEnd(shuffleId, task.partitionId, value.asInstanceOf[MapStatus])
+          }
+        }
         val resultSer = env.serializer.newInstance()
         val beforeSerialization = System.currentTimeMillis()
         val valueBytes = resultSer.serialize(value)
@@ -289,8 +270,6 @@ private[spark] class Executor(
         val directResult = new DirectTaskResult(valueBytes, accumUpdates, task.metrics.orNull)
         val serializedDirectResult = ser.serialize(directResult)
         val resultSize = serializedDirectResult.limit
-
-        // TODO frankfzw send the serializeDirectResult to corresponding reducer
 
         // directSend = sending directly back to the driver
         val serializedResult: ByteBuffer = {

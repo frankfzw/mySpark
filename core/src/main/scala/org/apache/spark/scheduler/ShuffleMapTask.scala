@@ -112,21 +112,20 @@ private[spark] class ShuffleMapTask(
       writer = manager.getWriter[Any, Any](dep.shuffleHandle, partitionId, context)
       // logInfo(s"frankfzw: wirter class is ${writer.getClass.getName}")
       // writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])
-      // TODO frankfzw pipe the shuffle, write every partition on the remote memory
-      if (pipeFlag) {
-        // targetBlockManger.foreach(kv => logInfo(s"frankfzw: Target BlockManger ${kv._1} : ${kv._2.slaveEndpoint.address}"))
-        for (kv <- targetBlockManger) {
-          BlockManager.pipeStart(kv._2, shuffleId, partitionId, executorId, kv._1)
-        }
-        writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])
-      } else {
-        writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])
-      }
-      // writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])
+      // if (pipeFlag) {
+      //   // targetBlockManger.foreach(kv => logInfo(s"frankfzw: Target BlockManger ${kv._1} : ${kv._2.slaveEndpoint.address}"))
+      //   for (kv <- targetBlockManger) {
+      //     BlockManager.pipeStart(kv._2, shuffleId, partitionId, executorId, kv._1)
+      //   }
+      //   writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])
+      // } else {
+      //   writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])
+      // }
+      writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])
       val ret = writer.stop(success = true).get
-      for (kv <- targetBlockManger) {
-        BlockManager.pipeEnd(kv._2, shuffleId, partitionId, kv._1, ret.getSizeForBlock(kv._1))
-      }
+      // for (kv <- targetBlockManger) {
+      //   BlockManager.pipeEnd(kv._2, shuffleId, partitionId, kv._1, ret.getSizeForBlock(kv._1))
+      // }
       ret
     } catch {
       case e: Exception =>

@@ -1073,7 +1073,7 @@ class DAGScheduler(
             // val (idToLoaction: Map[Int, Seq[TaskLocation]], reduceStatuses: Array[ReduceStatus]) = getRandomLocs(stage.id, partitionsToCompute.toList)
             // mapOutputTracker.registerPendingReduce(s.shuffleDep.shuffleId, reduceStatuses)
             val reduceStatuses = mapOutputTracker.getReduceStatuses(s.shuffleDep.shuffleId)
-            BlockManager.registerShufflePipe(blockManagerMaster, s.shuffleDep.shuffleId, reduceStatuses)
+            blockManagerMaster.registerShufflePipe(s.shuffleDep.shuffleId, reduceStatuses)
             val ret = partitionsToCompute.map { id => (id, getPreferredLocs(stage.rdd, id))}.toMap
             ret
           case s: ResultStage =>
