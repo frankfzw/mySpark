@@ -305,7 +305,9 @@ private[spark] class BlockManager(
             pipeEnd(shuffleId, mapPartition, blockManagerId, sizeArray)
           } else {
             val rpcRef = getRemoteBlockManager(e)
-            rpcRef.askWithRetry[Unit](PipeEnd(shuffleId, mapPartition, blockManagerId, sizeArray))
+            val ret = rpcRef.askWithRetry[Boolean](PipeEnd(shuffleId, mapPartition, blockManagerId, sizeArray))
+            if (!ret)
+              throw new SparkException(s"frankfzw: The map ${mapPartition} of shuffle ${shuffleId} failed on notification")
           }
         }
       }

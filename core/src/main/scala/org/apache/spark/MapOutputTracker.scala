@@ -282,9 +282,9 @@ private[spark] abstract class MapOutputTracker(conf: SparkConf) extends Logging 
       logDebug(s"Fetching map output statuses for shuffle $shuffleId took " +
         s"${System.currentTimeMillis - startTime} ms")
       if (fetchedStatuses != null) {
-        logInfo(s"frankfzw: Got the reduce locations for shuffle ${shuffleId}")
-        for (s <- fetchedStatuses)
-          logInfo(s"frankfzw: ShuffleId: ${shuffleId}; reduceId: ${s.partition}; executorId: ${s.executorId}")
+        logInfo(s"frankfzw: Got the reduce locations for shuffle ${shuffleId} with size ${fetchedStatuses.length}")
+        // for (s <- fetchedStatuses)
+        //   logInfo(s"frankfzw: ShuffleId: ${shuffleId}; reduceId: ${s.partition}; executorId: ${s.executorId}")
         return fetchedStatuses
       } else {
         logInfo(s"frankfzw: Missing all reduce locations for shuffle ${shuffleId}. Is it because there is no pending stage?")
