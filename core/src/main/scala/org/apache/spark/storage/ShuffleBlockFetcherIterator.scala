@@ -118,9 +118,9 @@ final class ShuffleBlockFetcherIterator(
   // added by frankfzw to read from cache
   private[this] val _isCached = isCached
 
-  private[this] val _requestResults = requestResults.toIterator
+  private[this] var _requestResults: Iterator[LinkedBlockingQueue[FetchResult]] = null
 
-  private[this] val _requestBlockNumber = requestBlockNumber.toIterator
+  private[this] var _requestBlockNumber: Iterator[Int] = null
 
   private[this] var currentWaitingQueue: LinkedBlockingQueue[FetchResult] = null
 
@@ -213,7 +213,7 @@ final class ShuffleBlockFetcherIterator(
     // Tracks total number of blocks (including zero sized blocks)
     var totalBlocks = 0
     for ((address, blockInfos) <- blocksByAddress) {
-      logInfo(s"frankfzw: address: ${address}, info: ${blockInfos}")
+      // logInfo(s"frankfzw: address: ${address}, info: ${blockInfos}")
       totalBlocks += blockInfos.size
       if (address.executorId == blockManager.blockManagerId.executorId) {
         // Filter out zero-sized blocks
@@ -231,7 +231,7 @@ final class ShuffleBlockFetcherIterator(
             remoteBlocks += blockId
             numBlocksToFetch += 1
             curRequestSize += size
-          } else if (size < 0 && !isCached) {
+          } else {
             throw new BlockException(blockId, "Negative block size " + size)
           }
           if (curRequestSize >= targetRequestSize) {
@@ -299,6 +299,8 @@ final class ShuffleBlockFetcherIterator(
       fetchLocalBlocks()
       logDebug("Got local blocks in " + Utils.getUsedTimeMs(startTime))
     } else {
+      _requestResults = requestResults.toIterator
+      _requestBlockNumber = requestBlockNumber.toIterator
       numBlocksToFetch = 0
       requestBlockNumber.foreach(numBlocksToFetch += _)
       currentWaitingQueue = _requestResults.next
@@ -319,56 +321,82 @@ final class ShuffleBlockFetcherIterator(
    * Throws a FetchFailedException if the next block could not be fetched.
    */
   override def next(): (BlockId, InputStream) = {
-    if (currentWaitingNumber == 0) {
-      if (!_requestBlockNumber.hasNext)
-        throw new SparkException("frankfzw: The fetch is over")
-      currentWaitingNumber = _requestBlockNumber.next
-      currentWaitingQueue = _requestResults.next
-    }
-    numBlocksProcessed += 1
-    currentWaitingNumber -= 1
-    val startFetchWait = System.currentTimeMillis()
-    currentResult = currentWaitingQueue.take()
-    val result = currentResult
-    val stopFetchWait = System.currentTimeMillis()
-    shuffleMetrics.incFetchWaitTime(stopFetchWait - startFetchWait)
+    if (isCached) {
+      if (currentWaitingNumber == 0) {
+        if (!_requestBlockNumber.hasNext)
+          throw new SparkException("frankfzw: The fetch is over")
+        currentWaitingNumber = _requestBlockNumber.next
+        currentWaitingQueue = _requestResults.next
+      }
+      numBlocksProcessed += 1
+      currentWaitingNumber -= 1
+      val startFetchWait = System.currentTimeMillis()
+      currentResult = currentWaitingQueue.take()
+      val result = currentResult
+      val stopFetchWait = System.currentTimeMillis()
+      shuffleMetrics.incFetchWaitTime(stopFetchWait - startFetchWait)
 
-    // result match {
-    //   case SuccessFetchResult(_, _, size, _) => bytesInFlight -= size
-    //   case _ =>
-    // }
-    // Send fetch requests up to maxBytesInFlight
-    // fetchUpToMaxBytes()
+      result match {
+        case FailureFetchResult(blockId, address, e) =>
+          throwFetchFailedException(blockId, address, e)
 
-    result match {
-      case FailureFetchResult(blockId, address, e) =>
-        throwFetchFailedException(blockId, address, e)
+        case EmptyFetchResult(blockId, address) =>
+          (blockId, null)
 
-      case EmptyFetchResult(blockId, address) =>
-        (blockId, null)
+        case LocalFetchResult(blockId, address, size) =>
+          try {
+            val buf = blockManager.getBlockData(blockId)
+            shuffleMetrics.incLocalBlocksFetched(1)
+            shuffleMetrics.incLocalBytesRead(buf.size)
+            buf.retain()
+            (blockId, new BufferReleasingInputStream(buf.createInputStream(), this))
+          } catch {
+            case NonFatal(t) =>
+              throwFetchFailedException(blockId, address, t)
+          }
 
-      case LocalFetchResult(blockId, address, size) =>
-        try {
-          val buf = blockManager.getBlockData(blockId)
-          shuffleMetrics.incLocalBlocksFetched(1)
-          shuffleMetrics.incLocalBytesRead(buf.size)
-          buf.retain()
-          (blockId, new BufferReleasingInputStream(buf.createInputStream(), this))
+        case SuccessFetchResult(blockId, address, size, buf) =>
+          try {
+              shuffleMetrics.incRemoteBlocksFetched(1)
+              shuffleMetrics.incRemoteBytesRead(buf.size)
+              (result.blockId, new BufferReleasingInputStream(buf.createInputStream(), this))
         } catch {
           case NonFatal(t) =>
             throwFetchFailedException(blockId, address, t)
         }
+      }
+    } else {
+      numBlocksProcessed += 1
+      val startFetchWait = System.currentTimeMillis()
+      currentResult = results.take()
+      val result = currentResult
+      val stopFetchWait = System.currentTimeMillis()
+      shuffleMetrics.incFetchWaitTime(stopFetchWait - startFetchWait)
 
-      case SuccessFetchResult(blockId, address, size, buf) =>
-        try {
-            shuffleMetrics.incRemoteBlocksFetched(1)
-            shuffleMetrics.incRemoteBytesRead(buf.size)
+      result match {
+        case SuccessFetchResult(_, _, size, _) => bytesInFlight -= size
+        case _ =>
+      }
+      // Send fetch requests up to maxBytesInFlight
+      fetchUpToMaxBytes()
+
+      result match {
+        case FailureFetchResult(blockId, address, e) =>
+          throwFetchFailedException(blockId, address, e)
+
+        case SuccessFetchResult(blockId, address, _, buf) =>
+          try {
             (result.blockId, new BufferReleasingInputStream(buf.createInputStream(), this))
-        } catch {
-          case NonFatal(t) =>
-            throwFetchFailedException(blockId, address, t)
-        }
+          } catch {
+            case NonFatal(t) =>
+              throwFetchFailedException(blockId, address, t)
+          }
+
+        case _ =>
+          throw new SparkException("frankfzw: Unknown fetch result")
+      }
     }
+
   }
 
   private def fetchUpToMaxBytes(): Unit = {

@@ -507,7 +507,7 @@ private[spark] class MapOutputTrackerMaster(conf: SparkConf)
         var mapIdx = 0
         while (mapIdx < statuses.length) {
           val status = statuses(mapIdx)
-          logInfo("frankfzw: status " + statuses(mapIdx))
+          // logInfo("frankfzw: status " + statuses(mapIdx))
           val blockSize = status.getSizeForBlock(reducerId)
           //logInfo("frankfzw: blockSize " + blockSize)
           if (blockSize > 0) {
