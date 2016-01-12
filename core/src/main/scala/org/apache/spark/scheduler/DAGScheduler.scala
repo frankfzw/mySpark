@@ -317,6 +317,7 @@ class DAGScheduler(
    * @return
    */
   private def getParentStagesAndIdWithReduceRegister(rdd: RDD[_], firstJobId: Int, partitions: Array[Int]): (List[Stage], Int) = {
+    logInfo("frankfzw: It's a pipeShuffle version")
     val parentStages = getParentStagesWithReduceRegister(rdd, firstJobId, partitions)
     val id = nextStageId.getAndIncrement()
     (parentStages, id)
@@ -388,11 +389,19 @@ class DAGScheduler(
       shuffleDep: ShuffleDependency[_, _, _],
       firstJobId: Int,
       callSite: CallSite): ShuffleMapStage = {
-    val (parentStages: List[Stage], id: Int) = getParentStagesAndId(rdd, firstJobId)
-    val stage: ShuffleMapStage = new ShuffleMapStage(id, rdd, numTasks, parentStages,
-      firstJobId, callSite, shuffleDep)
+    var stage: ShuffleMapStage = null
+    if (!pipeFlag) {
+      val (parentStages: List[Stage], id: Int) = getParentStagesAndId(rdd, firstJobId)
+      stage = new ShuffleMapStage(id, rdd, numTasks, parentStages,
+        firstJobId, callSite, shuffleDep)
+      stageIdToStage(id) = stage
+    } else {
+      val (parentStages: List[Stage], id: Int) = getParentStagesAndIdWithReduceRegister(rdd, firstJobId, rdd.partitions.map(p => p.index))
+      stage = new ShuffleMapStage(id, rdd, numTasks, parentStages,
+        firstJobId, callSite, shuffleDep)
+      stageIdToStage(id) = stage
+    }
 
-    stageIdToStage(id) = stage
     updateJobIdStageIdMaps(firstJobId, stage)
     stage
   }
@@ -408,12 +417,10 @@ class DAGScheduler(
       callSite: CallSite): ResultStage = {
     var stage: ResultStage = null
     if (!pipeFlag) {
-      logInfo("frankfzw: It's not a pipeShuffle version")
       val (parentStages, id) = getParentStagesAndId(rdd, jobId)
       stage = new ResultStage(id, rdd, func, partitions, parentStages, jobId, callSite)
       stageIdToStage(id) = stage
     } else {
-      logInfo("frankfzw: It's a pipeShuffle version")
       val (parentStages, id) = getParentStagesAndIdWithReduceRegister(rdd, jobId, partitions)
       stage = new ResultStage(id, rdd, func, partitions, parentStages, jobId, callSite)
       stageIdToStage(id) = stage
@@ -1079,6 +1086,7 @@ class DAGScheduler(
     // frankfzw: assign the reducers randomly
     val taskIdToLocations = {
       try {
+        var realPartitionsToCompute: Seq[Int] = null
         stage match {
           case s: ShuffleMapStage =>
             // val (idToLoaction: Map[Int, Seq[TaskLocation]], reduceStatuses: Array[ReduceStatus]) = getRandomLocs(stage.id, partitionsToCompute.toList)
@@ -1087,57 +1095,55 @@ class DAGScheduler(
               val reduceStatuses = mapOutputTracker.getReduceStatuses(s.shuffleDep.shuffleId)
               blockManagerMaster.registerShufflePipe(s.shuffleDep.shuffleId, reduceStatuses)
             }
-            val ret = partitionsToCompute.map { id => (id, getPreferredLocs(stage.rdd, id))}.toMap
-            ret
+            realPartitionsToCompute = partitionsToCompute
+            // val ret = partitionsToCompute.map { id => (id, getPreferredLocs(stage.rdd, id))}.toMap
+            // ret
           case s: ResultStage =>
             val job = s.resultOfJob.get
-            //get the allocated location for reduce tasks
-            val visited = new HashSet[RDD[_]]
-            val waitingForVisit = new Stack[RDD[_]]
-            var reduceStatus: Array[ReduceStatus] = null
-            if (pipeFlag) {
-              def visit(r: RDD[_]) {
-                if (!visited(r)) {
-                  visited += r
-                  for (dep <- r.dependencies) {
-                    dep match {
-                      case shufDep: ShuffleDependency[_, _, _] =>
-                        if (shufDep.shuffleId != -1) {
-                          reduceStatus = mapOutputTracker.getReduceStatuses(shufDep.shuffleId)
-                        }
-                      case _ =>
-                        waitingForVisit.push(dep.rdd)
+            realPartitionsToCompute = partitionsToCompute.map(id => s.partitions(id))
+        }
+        //get the allocated location for reduce tasks
+        val visited = new HashSet[RDD[_]]
+        val waitingForVisit = new Stack[RDD[_]]
+        var reduceStatus: Array[ReduceStatus] = null
+        if (pipeFlag) {
+          def visit(r: RDD[_]) {
+            if (!visited(r)) {
+              visited += r
+              for (dep <- r.dependencies) {
+                dep match {
+                  case shufDep: ShuffleDependency[_, _, _] =>
+                    if (shufDep.shuffleId != -1) {
+                      reduceStatus = mapOutputTracker.getReduceStatuses(shufDep.shuffleId)
                     }
-                  }
+                  case _ =>
+                    waitingForVisit.push(dep.rdd)
                 }
               }
-              waitingForVisit.push(stage.rdd)
-              while (waitingForVisit.nonEmpty && (reduceStatus == null)) {
-                visit(waitingForVisit.pop())
-              }
             }
-            if (reduceStatus == null) {
-              partitionsToCompute.map { id =>
-                val p = s.partitions(id)
-                (id, getPreferredLocs(stage.rdd, p))
-              }.toMap
+          }
+          waitingForVisit.push(stage.rdd)
+          while (waitingForVisit.nonEmpty && (reduceStatus == null)) {
+            visit(waitingForVisit.pop())
+          }
+        }
+        if (reduceStatus == null) {
+          realPartitionsToCompute.map { id =>
+            (id, getPreferredLocs(stage.rdd, id))
+          }.toMap
+        } else {
+          realPartitionsToCompute.map { id =>
+            val loc = if (sc.isLocal) {
+              for (rs <- reduceStatus if rs.partition == id)
+                yield "localhost"
+            } else {
+              for (rs <- reduceStatus if rs.partition == id)
+                yield executorIdToHost(rs.executorId)
             }
-            else {
-              partitionsToCompute.map { id =>
-                val p = s.partitions(id)
-                val loc = if (sc.isLocal) {
-                  for (rs <- reduceStatus if rs.partition == p)
-                    yield "localhost"
-                } else {
-                  for (rs <- reduceStatus if rs.partition == p)
-                    yield executorIdToHost(rs.executorId)
-                }
-                val taskLocation = loc.toSeq.map(TaskLocation(_))
+            val taskLocation = loc.toSeq.map(TaskLocation(_))
 
-                (id, taskLocation)
-              }.toMap
-            }
-
+            (id, taskLocation)
+          }.toMap
         }
       } catch {
         case NonFatal(e) =>
