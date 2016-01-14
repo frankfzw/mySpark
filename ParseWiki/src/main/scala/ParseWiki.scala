@@ -35,7 +35,7 @@ object ParseWiki {
   var SLICES: Int = 100
   
 
-  class Article(raw: String) {
+  class Article(raw: String) extends Serializable{
     val links: Array[String] = Article.parseLink(raw).distinct
     val redirect: Boolean = !Article.redirectPattern.findFirstIn(raw).isEmpty
     val stub: Boolean = !Article.stubPattern.findFirstIn(raw).isEmpty
