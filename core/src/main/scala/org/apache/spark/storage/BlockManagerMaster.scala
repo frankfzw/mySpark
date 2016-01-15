@@ -75,7 +75,7 @@ class BlockManagerMaster(
       var rpcRef = getRemoteBlockManager(e)
       while (rpcRef == null) {
         logWarning(s"frankfzw: The remote ${e} is not ready")
-        Thread.sleep(2)
+        Thread.sleep(10)
         rpcRef = getRemoteBlockManager(e)
       }
       rpcRef.askWithRetry[Boolean](RegisterShufflePipe(shuffleId))
