@@ -34,6 +34,7 @@ object ParseWiki {
 
   var SLICES: Int = 100
   var PATH_TO_SAVE = ""
+  var ITER: Int = 10
 
   class Article(raw: String) extends Serializable{
     val links: Array[String] = Article.parseLink(raw).distinct
@@ -90,13 +91,14 @@ object ParseWiki {
 
 
   def main(args: Array[String]) {
-    if (args.length < 3) {
-      System.err.println("Usage: ParseWiki <file> <numslice> <path_to_save>")
+    if (args.length < 4) {
+      System.err.println("Usage: ParseWiki <file> <numslice> <path_to_save> <iter>")
       System.exit(1)
     }
 
     SLICES = args(1).toInt
     PATH_TO_SAVE = args(2)
+    ITER = args(3).toInt
 
     //load xml from hdfs
     val conf = new Configuration
@@ -112,10 +114,11 @@ object ParseWiki {
     val allArtsRDD = xmlRDD.map { raw => new Article(raw) }
     //cache the articles
     val graph = allArtsRDD.filter(a => a.relevant).cache()
+    println(graph.count)
     val links = graph.map(art => (art.title, art.links))
     var ranks = links.mapValues(v => 1.0)
 
-    for (i <- 1 to 10) {
+    for (i <- 1 to ITER) {
       val contribs = links.join(ranks).values.flatMap{ case (urls, rank) =>
         val size = urls.size
         urls.map(url => (url, rank / size))
@@ -126,11 +129,7 @@ object ParseWiki {
     val output = ranks.collect()
     output.foreach(tup => println(tup._1 + " has rank: " + tup._2 + "."))
 
-    println(graph.count)
-
-
-
-    graph.saveAsTextFile(PATH_TO_SAVE)
+    // graph.saveAsTextFile(PATH_TO_SAVE)
 
   }
 }
