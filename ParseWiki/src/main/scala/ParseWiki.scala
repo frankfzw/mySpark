@@ -33,7 +33,7 @@ import org.apache.mahout.text.wikipedia._
 object ParseWiki {
 
   var SLICES: Int = 100
-  
+  var PATH_TO_SAVE = ""
 
   class Article(raw: String) extends Serializable{
     val links: Array[String] = Article.parseLink(raw).distinct
@@ -49,6 +49,15 @@ object ParseWiki {
       }
     }
     val relevant: Boolean = !(redirect || stub || disambig || title == Article.notFoundString || title == null)
+
+    override def toString: String = {
+      var linksStr = ""
+      for (link <- links) {
+        linksStr += link
+        linksStr += ","
+      }
+      title + " " + linksStr
+    }
 
   }
 
@@ -81,13 +90,13 @@ object ParseWiki {
 
 
   def main(args: Array[String]) {
-    if (args.length < 1) {
-      System.err.println("Usage: ParseWiki <file> <numslice>")
+    if (args.length < 3) {
+      System.err.println("Usage: ParseWiki <file> <numslice> <path_to_save>")
       System.exit(1)
     }
 
-    if (args.length > 1)
-      SLICES = args(1).toInt
+    SLICES = args(1).toInt
+    PATH_TO_SAVE = args(2)
 
     //load xml from hdfs
     val conf = new Configuration
@@ -99,12 +108,29 @@ object ParseWiki {
     val sc = new SparkContext(sparkConf)
 
     val xmlRDD = sc.newAPIHadoopFile(args(0), classOf[XmlInputFormat], classOf[LongWritable], classOf[Text], conf)
-      .map(t => t._2.toString).coalesce(SLICES, false)
+      .map(t => t._2.toString).coalesce(SLICES, true)
     val allArtsRDD = xmlRDD.map { raw => new Article(raw) }
     //cache the articles
     val graph = allArtsRDD.filter(a => a.relevant).cache()
+    val links = graph.map(art => (art.title, art.links))
+    var ranks = links.mapValues(v => 1.0)
+
+    for (i <- 1 to 10) {
+      val contribs = links.join(ranks).values.flatMap{ case (urls, rank) =>
+        val size = urls.size
+        urls.map(url => (url, rank / size))
+      }
+      ranks = contribs.reduceByKey(_ + _).mapValues(0.15 + 0.85 * _)
+    }
+
+    val output = ranks.collect()
+    output.foreach(tup => println(tup._1 + " has rank: " + tup._2 + "."))
 
     println(graph.count)
+
+
+
+    graph.saveAsTextFile(PATH_TO_SAVE)
 
   }
 }
