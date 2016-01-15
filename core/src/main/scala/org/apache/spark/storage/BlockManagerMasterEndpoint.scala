@@ -153,19 +153,19 @@ class BlockManagerMasterEndpoint(
    * @param executorId
    * @return the slave RpcEndpointRef of the corresponding BlockManager for the given executor
    */
-  private def getRemoteBlockManager(executorId: String): RpcEndpointRef = {
+  private def getRemoteBlockManager(executorId: String): Option[RpcEndpointRef] = {
     if (blockManagerIdByExecutor.contains(executorId)) {
       val blockManagerId = blockManagerIdByExecutor(executorId)
       if (blockManagerInfo.contains(blockManagerId)) {
         // logInfo(s"frankfzw: getRemoteBlockManager: executorId: ${executorId}, blockManagerId: ${blockManagerId}")
-        blockManagerInfo(blockManagerId).slaveEndpoint
+        Some(blockManagerInfo(blockManagerId).slaveEndpoint)
       } else {
         logError(s"Missing blockManagerId ${blockManagerId} in blockManagerInfo")
-        null
+        None
       }
     } else {
       logError(s"Missing executorId ${executorId} in blockManagerIdByExecutor")
-      null
+      None
     }
   }
 

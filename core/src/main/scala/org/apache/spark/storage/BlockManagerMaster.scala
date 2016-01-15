@@ -49,14 +49,20 @@ class BlockManagerMaster(
    * added by frankfzw
    * Fetch the remote BlockManager by executor id
    * @param executorId
-   * @return
+   * @return null if the remote BlockManager is not ready
    */
   def getRemoteBlockManager(executorId: String): RpcEndpointRef = {
     if (!executorIdToRpcEndpointRef.contains(executorId)) {
-      val ref = driverEndpoint.askWithRetry[RpcEndpointRef](AskForRemoteBlockManager(executorId))
-      executorIdToRpcEndpointRef.synchronized {
-        executorIdToRpcEndpointRef.getOrElseUpdate(executorId, ref)
+      val ref = driverEndpoint.askWithRetry[Option[RpcEndpointRef]](AskForRemoteBlockManager(executorId))
+      ref match {
+        case Some(rpcRef) =>
+          executorIdToRpcEndpointRef.synchronized {
+            executorIdToRpcEndpointRef.getOrElseUpdate(executorId, rpcRef)
+          }
+        case None =>
+          return null
       }
+
     }
     executorIdToRpcEndpointRef(executorId)
   }
