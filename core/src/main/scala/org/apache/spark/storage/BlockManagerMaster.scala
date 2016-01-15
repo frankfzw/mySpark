@@ -66,7 +66,12 @@ class BlockManagerMaster(
     for (rs <- reduceStatuses)
       executors += rs.executorId
     for (e <- executors) {
-      val rpcRef = getRemoteBlockManager(e)
+      var rpcRef = getRemoteBlockManager(e)
+      while (rpcRef == null) {
+        logWarning(s"frankfzw: The remote ${e} is not ready")
+        Thread.sleep(2)
+        rpcRef = getRemoteBlockManager(e)
+      }
       rpcRef.askWithRetry[Boolean](RegisterShufflePipe(shuffleId))
     }
   }

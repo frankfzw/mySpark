@@ -160,10 +160,12 @@ class BlockManagerMasterEndpoint(
         // logInfo(s"frankfzw: getRemoteBlockManager: executorId: ${executorId}, blockManagerId: ${blockManagerId}")
         blockManagerInfo(blockManagerId).slaveEndpoint
       } else {
-        throw new IllegalArgumentException(s"Missing blockManagerId ${blockManagerId} in blockManagerInfo")
+        logError(s"Missing blockManagerId ${blockManagerId} in blockManagerInfo")
+        null
       }
     } else {
-      throw new IllegalArgumentException(s"Missing executorId ${executorId} in blockManagerIdByExecutor")
+      logError(s"Missing executorId ${executorId} in blockManagerIdByExecutor")
+      null
     }
   }
 
