@@ -231,7 +231,7 @@ final class ShuffleBlockFetcherIterator(
             remoteBlocks += blockId
             numBlocksToFetch += 1
             curRequestSize += size
-          } else {
+          } else if (size < 0){
             throw new BlockException(blockId, "Negative block size " + size)
           }
           if (curRequestSize >= targetRequestSize) {
