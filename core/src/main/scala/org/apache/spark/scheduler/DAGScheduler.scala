@@ -27,6 +27,7 @@ import scala.collection.mutable.{ArrayBuffer, HashMap, HashSet, Stack}
 import scala.concurrent.duration._
 import scala.language.existentials
 import scala.language.postfixOps
+import scala.util.Random
 import scala.util.control.NonFatal
 import scala.reflect.ClassTag
 
@@ -339,7 +340,7 @@ class DAGScheduler(
       val executorId = if (sc.isLocal) {
         SparkContext.DRIVER_IDENTIFIER
       } else {
-        currentExecutors(i % currentExecutors.length)
+        currentExecutors(Random.nextInt(currentExecutors.length))
       }
       val reduceStatus = new ReduceStatus(partitions(i), executorId)
       reduceStatuses(i) = reduceStatus
@@ -1129,11 +1130,12 @@ class DAGScheduler(
           }
         }
         if (reduceStatus == null) {
-          executorDesignated = true
+          logInfo("frankfzw: It's a stage with no pending shuffle")
           realPartitionsToCompute.map { id =>
             (id, getPreferredLocs(stage.rdd, id))
           }.toMap
         } else {
+          executorDesignated = true
           realPartitionsToCompute.map { id =>
             val loc = if (sc.isLocal) {
               for (rs <- reduceStatus if rs.partition == id)
