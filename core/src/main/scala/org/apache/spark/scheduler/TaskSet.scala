@@ -32,7 +32,7 @@ private[spark] class TaskSet(
     val stageAttemptId: Int,
     val priority: Int,
     val properties: Properties,
-    val pipeFlag: Boolean = false) {
+    val executorDesignated: Boolean = false) {
     val id: String = stageId + "." + stageAttemptId
 
   override def toString: String = "TaskSet " + id

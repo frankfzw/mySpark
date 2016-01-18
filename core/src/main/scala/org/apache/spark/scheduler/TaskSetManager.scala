@@ -81,7 +81,7 @@ private[spark] class TaskSetManager(
   val tasks = taskSet.tasks
   val numTasks = tasks.length
   // added by frankfzw
-  val pipeFlag = taskSet.pipeFlag
+  val executorDesignated = taskSet.executorDesignated
   val copiesRunning = new Array[Int](numTasks)
   val successful = new Array[Boolean](numTasks)
   private val numFailures = new Array[Int](numTasks)
@@ -299,7 +299,7 @@ private[spark] class TaskSetManager(
    */
   // Labeled as protected to allow tests to override providing speculative tasks if necessary
   // modified by frankfzw,
-  // make sure there is no sepeculativetask return if the pipeFlag is true
+  // make sure there is no sepeculativetask return if the Designated is true
   protected def dequeueSpeculativeTask(execId: String, host: String, locality: TaskLocality.Value)
     : Option[(Int, TaskLocality.Value)] =
   {
@@ -308,7 +308,7 @@ private[spark] class TaskSetManager(
     def canRunOnHost(index: Int): Boolean =
       !hasAttemptOnHost(index, host) && !executorIsBlacklisted(execId, index)
 
-    if (!speculatableTasks.isEmpty && !pipeFlag) {
+    if (!speculatableTasks.isEmpty && !executorDesignated) {
       // Check for process-local tasks; note that tasks can be process-local
       // on multiple nodes when we replicate cached blocks, as in Spark Streaming
       for (index <- speculatableTasks if canRunOnHost(index)) {
@@ -492,7 +492,7 @@ private[spark] class TaskSetManager(
           // val timeTaken = clock.getTime() - startTime
           val taskName = s"task ${info.id} in stage ${taskSet.id}"
           logInfo(s"Starting $taskName (TID $taskId, $host, partition ${task.partitionId}," +
-            s"$taskLocality, ${serializedTask.limit} bytes)")
+            s"$taskLocality, ${serializedTask.limit} bytes, speculative: ${info.speculative})")
 
           sched.dagScheduler.taskStarted(task, info)
           return Some(new TaskDescription(taskId = taskId, attemptNumber = attemptNum, execId,
@@ -899,17 +899,19 @@ private[spark] class TaskSetManager(
       levels += PROCESS_LOCAL
     }
     if (!pendingTasksForHost.isEmpty && getLocalityWait(NODE_LOCAL) != 0 &&
-        pendingTasksForHost.keySet.exists(sched.hasExecutorsAliveOnHost(_)) && !pipeFlag) {
+        pendingTasksForHost.keySet.exists(sched.hasExecutorsAliveOnHost(_)) && !executorDesignated) {
       levels += NODE_LOCAL
     }
-    if (!pendingTasksWithNoPrefs.isEmpty && !pipeFlag) {
+    if (!pendingTasksWithNoPrefs.isEmpty && !executorDesignated) {
       levels += NO_PREF
     }
     if (!pendingTasksForRack.isEmpty && getLocalityWait(RACK_LOCAL) != 0 &&
-        pendingTasksForRack.keySet.exists(sched.hasHostAliveOnRack(_)) && !pipeFlag) {
+        pendingTasksForRack.keySet.exists(sched.hasHostAliveOnRack(_)) && !executorDesignated) {
       levels += RACK_LOCAL
     }
-    levels += ANY
+    if (!executorDesignated) {
+      levels += ANY
+    }
     logDebug("Valid locality levels for " + taskSet + ": " + levels.mkString(", "))
     levels.toArray
   }

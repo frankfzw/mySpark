@@ -1083,6 +1083,7 @@ class DAGScheduler(
     // will be posted, which should always come after a corresponding SparkListenerStageSubmitted
     // event.
     outputCommitCoordinator.stageStart(stage.id)
+    var executorDesignated = false
     // frankfzw: assign the reducers randomly
     val taskIdToLocations = {
       try {
@@ -1128,6 +1129,7 @@ class DAGScheduler(
           }
         }
         if (reduceStatus == null) {
+          executorDesignated = true
           realPartitionsToCompute.map { id =>
             (id, getPreferredLocs(stage.rdd, id))
           }.toMap
@@ -1235,7 +1237,7 @@ class DAGScheduler(
       stage.pendingPartitions ++= tasks.map(_.partitionId)
       logDebug("New pending partitions: " + stage.pendingPartitions)
       taskScheduler.submitTasks(new TaskSet(
-        tasks.toArray, stage.id, stage.latestInfo.attemptId, stage.firstJobId, properties, pipeFlag))
+        tasks.toArray, stage.id, stage.latestInfo.attemptId, stage.firstJobId, properties, executorDesignated))
       stage.latestInfo.submissionTime = Some(clock.getTimeMillis())
     } else {
       // Because we posted SparkListenerStageSubmitted earlier, we should mark
