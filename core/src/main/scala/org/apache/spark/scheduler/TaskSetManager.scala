@@ -80,6 +80,8 @@ private[spark] class TaskSetManager(
 
   val tasks = taskSet.tasks
   val numTasks = tasks.length
+  // added by frankfzw
+  val pipeFlag = taskSet.pipeFlag
   val copiesRunning = new Array[Int](numTasks)
   val successful = new Array[Boolean](numTasks)
   private val numFailures = new Array[Int](numTasks)
@@ -296,6 +298,8 @@ private[spark] class TaskSetManager(
    * the given locality constraint.
    */
   // Labeled as protected to allow tests to override providing speculative tasks if necessary
+  // modified by frankfzw,
+  // make sure there is no sepeculativetask return if the pipeFlag is true
   protected def dequeueSpeculativeTask(execId: String, host: String, locality: TaskLocality.Value)
     : Option[(Int, TaskLocality.Value)] =
   {
@@ -304,7 +308,7 @@ private[spark] class TaskSetManager(
     def canRunOnHost(index: Int): Boolean =
       !hasAttemptOnHost(index, host) && !executorIsBlacklisted(execId, index)
 
-    if (!speculatableTasks.isEmpty) {
+    if (!speculatableTasks.isEmpty && !pipeFlag) {
       // Check for process-local tasks; note that tasks can be process-local
       // on multiple nodes when we replicate cached blocks, as in Spark Streaming
       for (index <- speculatableTasks if canRunOnHost(index)) {
@@ -885,6 +889,8 @@ private[spark] class TaskSetManager(
    * added to queues using addPendingTask.
    *
    */
+  // modified by frankfzw
+  // make sure the task runs exactly on the designate executor if it's a pipeShuffle version
   private def computeValidLocalityLevels(): Array[TaskLocality.TaskLocality] = {
     import TaskLocality.{PROCESS_LOCAL, NODE_LOCAL, NO_PREF, RACK_LOCAL, ANY}
     val levels = new ArrayBuffer[TaskLocality.TaskLocality]
@@ -893,14 +899,14 @@ private[spark] class TaskSetManager(
       levels += PROCESS_LOCAL
     }
     if (!pendingTasksForHost.isEmpty && getLocalityWait(NODE_LOCAL) != 0 &&
-        pendingTasksForHost.keySet.exists(sched.hasExecutorsAliveOnHost(_))) {
+        pendingTasksForHost.keySet.exists(sched.hasExecutorsAliveOnHost(_)) && !pipeFlag) {
       levels += NODE_LOCAL
     }
-    if (!pendingTasksWithNoPrefs.isEmpty) {
+    if (!pendingTasksWithNoPrefs.isEmpty && !pipeFlag) {
       levels += NO_PREF
     }
     if (!pendingTasksForRack.isEmpty && getLocalityWait(RACK_LOCAL) != 0 &&
-        pendingTasksForRack.keySet.exists(sched.hasHostAliveOnRack(_))) {
+        pendingTasksForRack.keySet.exists(sched.hasHostAliveOnRack(_)) && !pipeFlag) {
       levels += RACK_LOCAL
     }
     levels += ANY

@@ -68,15 +68,17 @@ class BlockManagerMaster(
   }
 
   def registerShufflePipe(shuffleId: Int, reduceStatuses: Array[ReduceStatus]): Unit = {
+    while (getBlockManagerList().length != (conf.getInt("spark.slaves.number", 1) + 1)) {
+      Thread.sleep(100)
+    }
     val executors = new mutable.HashSet[String]()
     for (rs <- reduceStatuses)
       executors += rs.executorId
     for (e <- executors) {
-      var rpcRef = getRemoteBlockManager(e)
-      while (rpcRef == null) {
-        logWarning(s"frankfzw: The remote ${e} is not ready")
-        Thread.sleep(10)
-        rpcRef = getRemoteBlockManager(e)
+      val rpcRef = getRemoteBlockManager(e)
+      if (rpcRef == null) {
+        logError(s"frankfzw: The remote ${e} is not ready")
+        throw new SparkException(s"frankfzw: The remote ${e} is not ready")
       }
       rpcRef.askWithRetry[Boolean](RegisterShufflePipe(shuffleId))
     }
