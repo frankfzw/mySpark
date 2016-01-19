@@ -422,6 +422,10 @@ private[spark] class MapOutputTrackerMaster(conf: SparkConf)
     cachedSerializedStatuses.contains(shuffleId) || mapStatuses.contains(shuffleId)
   }
 
+  def containsPendingReduce(shuffleId: Int): Boolean = {
+    cachedReduceStatuses.contains(shuffleId) || reduceStatuses.contains(shuffleId)
+  }
+
   /**
    * added by frankfzw
    * @param shuffleId
@@ -433,8 +437,8 @@ private[spark] class MapOutputTrackerMaster(conf: SparkConf)
       throw new IllegalArgumentException("Shuffle " + shuffleId + " is not registered yet")
     }
     if (reduceStatuses.contains(shuffleId)) {
-      logError("frankfzw: shuffleId " + shuffleId + " is registered again!!!")
-      reduceStatuses.update(shuffleId, statuses)
+      logWarning("frankfzw: shuffleId " + shuffleId + " is registered again!!!")
+      // reduceStatuses.update(shuffleId, statuses)
     } else {
       logInfo("frankfzw: register shuffle " + shuffleId + " with statuses " + statuses.length)
       // for(s <- statuses)

@@ -261,8 +261,6 @@ final class ShuffleBlockFetcherIterator(
     val iter = localBlocks.iterator
     while (iter.hasNext) {
       val blockId = iter.next()
-      while (isCached && (blockManager.shuffleFetchBlockIdToSize(blockId) == blockManager.BLOCK_PENDING))
-        Thread.sleep(2)
       try {
         val buf = blockManager.getBlockData(blockId)
         shuffleMetrics.incLocalBlocksFetched(1)

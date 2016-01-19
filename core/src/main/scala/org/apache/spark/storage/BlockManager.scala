@@ -176,15 +176,18 @@ private[spark] class BlockManager(
   // added by frankfzw, cache the shuffle data
   private val shuffleIdToReducePartition: HashMap[Int, ArrayBuffer[Int]] = new HashMap
 
+  // added by frankfzw. Do Bookkeeping for the state that whether the corresponding shuffle is cached
+  private val shuffleIdToCacheCondition: HashMap[Int, Int] = new HashMap
+
   private val shuffleIdToMapPartitionNumber: HashMap[Int, Int] = new HashMap
 
   private val shuffleFetchResultQueue: HashMap[Int, Array[LinkedBlockingQueue[FetchResult]]] = new HashMap
 
-  val shuffleFetchBlockIdToSize: HashMap[BlockId, Long] = new HashMap
-
   val cachedExeIdToBlockManagerId: HashMap[String, BlockManagerId] = new HashMap
 
   val cachedExeIdToRpcEndpointRef: HashMap[String, RpcEndpointRef] = new HashMap
+
+  private val shuffleIdToCachedBlockId: mutable.HashMap[Int, Array[Array[(BlockId, Long)]]] = new HashMap
 
   final val BLOCK_PENDING = -1
   final val BLOCK_EMPTY = -2
@@ -230,13 +233,18 @@ private[spark] class BlockManager(
     val reduceStatuses = mapOutputTracker.getReduceStatuses(shuffleId)
     val totalReducePartition = reduceStatuses.length
     if (!shuffleIdToReducePartition.contains(shuffleId)) {
-      shuffleIdToMapPartitionNumber(shuffleId) = reduceStatuses(0).getTotalMapPartiton()
+      val totalMapPartition = reduceStatuses(0).getTotalMapPartiton()
+      shuffleIdToCacheCondition += (shuffleId -> 0)
+      shuffleIdToMapPartitionNumber(shuffleId) = totalMapPartition
       shuffleIdToReducePartition += (shuffleId -> new ArrayBuffer[Int]())
       shuffleFetchResultQueue += (shuffleId -> new Array[LinkedBlockingQueue[FetchResult]](totalReducePartition))
+      shuffleIdToCachedBlockId += (shuffleId -> new Array[Array[(BlockId, Long)]](totalReducePartition))
+      // find the reduce task that will run on this executor
       for (rs <- reduceStatuses) {
         if (rs.executorId == blockManagerId.executorId) {
           shuffleFetchResultQueue(shuffleId)(rs.partition) = new LinkedBlockingQueue[FetchResult]()
           shuffleIdToReducePartition(shuffleId) += rs.partition
+          shuffleIdToCachedBlockId(shuffleId)(rs.partition) = new Array[(BlockId, Long)](totalMapPartition)
         }
       }
       // logInfo(s"frankfzw: Shuffle registerd: id: ${shuffleId}, reduce partition: ${reducePartition}, lock: ${shuffleCacheStatus(shuffleId)(reducePartition)}, buffer: ${shuffleIdToReducePartition(shuffleId)(reducePartition)}")
@@ -249,10 +257,14 @@ private[spark] class BlockManager(
    * added by frankfzw
    * called by BlockStoreShuffleReader to find out whether the data is cached on local memory
    * @param shuffleId shuffle id
+   * @param reduceId reduce partition
    * @return
    */
-  def isCached(shuffleId: Int): Boolean = {
-    shuffleIdToReducePartition.contains(shuffleId)
+  def isCached(shuffleId: Int, reduceId: Int): Boolean = {
+    if (shuffleIdToReducePartition.contains(shuffleId)) {
+      return shuffleIdToReducePartition(shuffleId).contains(reduceId)
+    }
+    false
   }
 
 
@@ -332,12 +344,13 @@ private[spark] class BlockManager(
       val blockIds = blockArray.map(_._1.toString)
       if (size == BLOCK_EMPTY) {
         shuffleFetchResultQueue(shuffleId)(reduceId).put(new EmptyFetchResult(BlockId(blockIds(0)), location))
+        putCacheBlock(shuffleId, mapId, reduceId, null, BLOCK_EMPTY, false)
       } else {
         shuffleClient.fetchBlocks(location.host, location.port, location.executorId, blockIds.toArray,
           new BlockFetchingListener {
             override def onBlockFetchSuccess(blockId: String, buf: ManagedBuffer): Unit = {
               buf.retain()
-              shuffleFetchResultQueue(shuffleId)(reduceId).put(new SuccessFetchResult(BlockId(blockId), location, sizeMap(blockId), buf))
+              putCacheBlock(shuffleId, mapId, reduceId, buf, size, false)
               logTrace("frankfzw: Got remote block " + blockId)
             }
 
@@ -353,9 +366,11 @@ private[spark] class BlockManager(
       val blockId = ShuffleBlockId(shuffleId, mapId, reduceId)
       if (size == BLOCK_EMPTY) {
         shuffleFetchResultQueue(shuffleId)(reduceId).put(new EmptyFetchResult(blockId, blockManagerId))
+        putCacheBlock(shuffleId, mapId, reduceId, null, BLOCK_EMPTY, true)
         return 1
       } else {
         shuffleFetchResultQueue(shuffleId)(reduceId).put(new LocalFetchResult(blockId, blockManagerId, size))
+        putCacheBlock(shuffleId, mapId, reduceId, null, size, true)
         return 1
       }
     }
@@ -371,13 +386,59 @@ private[spark] class BlockManager(
    * @return the FetchResult of remote data fetch
    */
   def getPendngFetchRequest(shuffleId: Int, startPartition: Int, endPartition: Int): Array[LinkedBlockingQueue[FetchResult]] = {
-    val buffer = new Array[LinkedBlockingQueue[FetchResult]](endPartition - startPartition)
-    // val number = new Array[Int](endPartition - startPartition)
-    for (i <- startPartition until endPartition) {
-      buffer(i - startPartition) = shuffleFetchResultQueue(shuffleId)(i)
-      //number(i - startPartition) = shuffleFetchBlockNumber(shuffleId)(i)
+    if (shuffleIdToCacheCondition(shuffleId) < shuffleIdToReducePartition(shuffleId).length) {
+      logInfo(s"frankfzw: Read cache from LinkedBlockingQueue ${shuffleId}: ${startPartition} to ${endPartition}")
+      shuffleIdToCacheCondition(shuffleId) += endPartition - startPartition
+      val buffer = new Array[LinkedBlockingQueue[FetchResult]](endPartition - startPartition)
+      // val number = new Array[Int](endPartition - startPartition)
+      for (i <- startPartition until endPartition) {
+        buffer(i - startPartition) = shuffleFetchResultQueue(shuffleId)(i)
+        //number(i - startPartition) = shuffleFetchBlockNumber(shuffleId)(i)
+      }
+      buffer
+    } else {
+      logInfo(s"frankfzw: Read cache from local ${shuffleId}: ${startPartition} to ${endPartition}")
+      val buffer = new Array[LinkedBlockingQueue[FetchResult]](endPartition - startPartition)
+      for (i <- startPartition until endPartition) {
+        for ((bId, size) <- shuffleIdToCachedBlockId(shuffleId)(i)) {
+          if (size == BLOCK_EMPTY) {
+            buffer(i - startPartition).put(new EmptyFetchResult(bId, blockManagerId))
+          } else {
+            buffer(i - startPartition).put(new LocalFetchResult(bId, blockManagerId, size))
+          }
+        }
+      }
+      buffer
     }
-    buffer
+  }
+
+  /**
+   * added by frankfzw
+   * @param shuffleId shuffle id
+   * @param mapId map partition id
+   * @param reduceId reduce partition id
+   * @param data buffer
+   * @param isLocal it's a local buffer?
+   */
+  def putCacheBlock(shuffleId: Int, mapId: Int, reduceId: Int, data: ManagedBuffer, size: Long, isLocal: Boolean): Unit = {
+    val thread = new Thread(new Runnable {
+      override def run(): Unit = {
+        if (size == BLOCK_EMPTY || isLocal) {
+          val blockId = ShuffleBlockId(shuffleId, mapId, reduceId)
+          shuffleIdToCachedBlockId.synchronized {
+            shuffleIdToCachedBlockId(shuffleId)(reduceId)(mapId) = (blockId, size)
+          }
+        } else {
+          data.retain()
+          val blockId = CacheShuffleBlockId(shuffleId, mapId, reduceId)
+          shuffleIdToCachedBlockId.synchronized {
+            shuffleIdToCachedBlockId(shuffleId)(reduceId)(mapId) = (blockId, size)
+          }
+          putBlockData(blockId, data, StorageLevel.DISK_ONLY)
+          data.release()
+        }
+      }
+    }).start()
   }
   /**
    * Initializes the BlockManager with the given appId. This is not performed in the constructor as

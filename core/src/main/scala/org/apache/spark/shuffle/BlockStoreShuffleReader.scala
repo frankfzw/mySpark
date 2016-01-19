@@ -56,7 +56,7 @@ private[spark] class BlockStoreShuffleReader[K, C](
     var fromCache: Boolean = false
 
     var blockFetcherItr: ShuffleBlockFetcherIterator = null
-    if (blockManager.isCached(handle.shuffleId)) {
+    if (blockManager.isCached(handle.shuffleId, startPartition)) {
       fromCache = true
       // val temp = new mutable.HashMap[BlockManagerId, ArrayBuffer[(BlockId, Long)]]
       val totalMapPartition = blockManager.getMapPartitionNumber(handle.shuffleId)

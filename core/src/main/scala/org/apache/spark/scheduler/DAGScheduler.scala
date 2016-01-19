@@ -30,6 +30,7 @@ import scala.language.postfixOps
 import scala.util.Random
 import scala.util.control.NonFatal
 import scala.reflect.ClassTag
+import util.control.Breaks._
 
 import org.apache.commons.lang3.SerializationUtils
 
@@ -334,17 +335,8 @@ class DAGScheduler(
   private def getParentStagesWithReduceRegister(rdd: RDD[_], firstJobId: Int, partitions: Array[Int]): List[Stage] = {
     val parents = new HashSet[Stage]
     val visited = new HashSet[RDD[_]]
-    val reduceStatuses: Array[ReduceStatus] = new Array[ReduceStatus](partitions.length)
-    val currentExecutors = executorIdToHost.keySet.toSeq
-    for (i <- 0 until partitions.length) {
-      val executorId = if (sc.isLocal) {
-        SparkContext.DRIVER_IDENTIFIER
-      } else {
-        currentExecutors(Random.nextInt(currentExecutors.length))
-      }
-      val reduceStatus = new ReduceStatus(partitions(i), executorId)
-      reduceStatuses(i) = reduceStatus
-    }
+    val shuffles = new HashSet[ShuffleDependency[_, _, _]]
+    var reduceStatuses: Array[ReduceStatus] = null
     // We are manually maintaining a stack here to prevent StackOverflowError
     // caused by recursively visiting
     // TODO: frankfzw register reduce location here
@@ -357,14 +349,8 @@ class DAGScheduler(
         for (dep <- r.dependencies) {
           dep match {
             case shufDep: ShuffleDependency[_, _, _] =>
-              val newReduceStatuses = reduceStatuses.map{
-                rs =>
-                  val newRs = new ReduceStatus(rs.partition, rs.executorId)
-                  newRs.setTotalMapPartition(dep.rdd.partitions.length)
-                  newRs
-              }
               parents += getShuffleMapStage(shufDep, firstJobId)
-              mapOutputTracker.registerPendingReduce(shufDep.shuffleId, newReduceStatuses)
+              shuffles += shufDep
             case _ =>
               waitingForVisit.push(dep.rdd)
           }
@@ -374,6 +360,59 @@ class DAGScheduler(
     waitingForVisit.push(rdd)
     while (waitingForVisit.nonEmpty) {
       visit(waitingForVisit.pop())
+    }
+    breakable {
+      for (dep <- shuffles) {
+        if (mapOutputTracker.containsPendingReduce(dep.shuffleId)) {
+          reduceStatuses = mapOutputTracker.getReduceStatuses(dep.shuffleId)
+          break
+        }
+      }
+    }
+    if (reduceStatuses != null) {
+      //It mean there is a finished shuffle in the all dependency
+      for (dep <- shuffles) {
+        val newReduceStatus = reduceStatuses.map {
+          rs =>
+            val newRs = new ReduceStatus(rs.partition, rs.executorId)
+            newRs.setTotalMapPartition(dep.rdd.partitions.length)
+            newRs
+        }
+        mapOutputTracker.registerPendingReduce(dep.shuffleId, newReduceStatus)
+      }
+    } else {
+      val currentExecutors = executorIdToHost.keySet.toSeq
+      reduceStatuses = new Array[ReduceStatus](partitions.length)
+      if (reduceStatuses.length < currentExecutors.length) {
+        for (i <- 0 until partitions.length) {
+          val executorId = if (sc.isLocal) {
+            SparkContext.DRIVER_IDENTIFIER
+          } else {
+            currentExecutors(Random.nextInt(currentExecutors.length))
+          }
+          val reduceStatus = new ReduceStatus(partitions(i), executorId)
+          reduceStatuses(i) = reduceStatus
+        }
+      } else {
+        for (i <- 0 until partitions.length) {
+          val executorId = if (sc.isLocal) {
+            SparkContext.DRIVER_IDENTIFIER
+          } else {
+            currentExecutors(i % currentExecutors.length)
+          }
+          val reduceStatus = new ReduceStatus(partitions(i), executorId)
+          reduceStatuses(i) = reduceStatus
+        }
+      }
+      for (dep <- shuffles) {
+        val newReduceStatus = reduceStatuses.map {
+          rs =>
+            val newRs = new ReduceStatus(rs.partition, rs.executorId)
+            newRs.setTotalMapPartition(dep.rdd.partitions.length)
+            newRs
+        }
+        mapOutputTracker.registerPendingReduce(dep.shuffleId, newReduceStatus)
+      }
     }
     parents.toList
   }
