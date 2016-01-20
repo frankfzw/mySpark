@@ -344,14 +344,14 @@ private[spark] class BlockManager(
       val blockIds = blockArray.map(_._1.toString)
       if (size == BLOCK_EMPTY) {
         shuffleFetchResultQueue(shuffleId)(reduceId).put(new EmptyFetchResult(BlockId(blockIds(0)), location))
-        putCacheBlock(shuffleId, mapId, reduceId, null, BLOCK_EMPTY, false)
+        //putCacheBlock(shuffleId, mapId, reduceId, null, BLOCK_EMPTY, false)
       } else {
         shuffleClient.fetchBlocks(location.host, location.port, location.executorId, blockIds.toArray,
           new BlockFetchingListener {
             override def onBlockFetchSuccess(blockId: String, buf: ManagedBuffer): Unit = {
               buf.retain()
               shuffleFetchResultQueue(shuffleId)(reduceId).put(new SuccessFetchResult(BlockId(blockId), location, sizeMap(blockId), buf))
-              putCacheBlock(shuffleId, mapId, reduceId, buf, size, false)
+              //putCacheBlock(shuffleId, mapId, reduceId, buf, size, false)
               logTrace("frankfzw: Got remote block " + blockId)
             }
 
@@ -367,11 +367,11 @@ private[spark] class BlockManager(
       val blockId = ShuffleBlockId(shuffleId, mapId, reduceId)
       if (size == BLOCK_EMPTY) {
         shuffleFetchResultQueue(shuffleId)(reduceId).put(new EmptyFetchResult(blockId, blockManagerId))
-        putCacheBlock(shuffleId, mapId, reduceId, null, BLOCK_EMPTY, true)
+        //putCacheBlock(shuffleId, mapId, reduceId, null, BLOCK_EMPTY, true)
         return 1
       } else {
         shuffleFetchResultQueue(shuffleId)(reduceId).put(new LocalFetchResult(blockId, blockManagerId, size))
-        putCacheBlock(shuffleId, mapId, reduceId, null, size, true)
+        //putCacheBlock(shuffleId, mapId, reduceId, null, size, true)
         return 1
       }
     }
