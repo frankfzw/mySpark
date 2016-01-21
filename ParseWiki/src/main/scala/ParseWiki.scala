@@ -37,7 +37,7 @@ object ParseWiki {
   var ITER: Int = 10
 
   class Article(raw: String) extends Serializable{
-    val links: Array[Long] = Article.parseLink(raw).distinct
+    val links: Array[String] = Article.parseLink(raw).distinct
     val redirect: Boolean = !Article.redirectPattern.findFirstIn(raw).isEmpty
     val stub: Boolean = !Article.stubPattern.findFirstIn(raw).isEmpty
     val disambig: Boolean = !Article.disambigPattern.findFirstIn(raw).isEmpty
@@ -97,7 +97,7 @@ object ParseWiki {
       for (i <- 0 until len) {
         h = 31*h + formatted.charAt(i)
       }
-      h
+      math.abs(h)
     }
 
   }
@@ -111,7 +111,7 @@ object ParseWiki {
 
     SLICES = args(1).toInt
     PATH_TO_SAVE = args(2)
-    ITER = args(3).toInt
+    //ITER = args(3).toInt
 
     //load xml from hdfs
     val conf = new Configuration
