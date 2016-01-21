@@ -37,7 +37,7 @@ object ParseWiki {
   var ITER: Int = 10
 
   class Article(raw: String) extends Serializable{
-    val links: Array[String] = Article.parseLink(raw).distinct
+    val links: Array[Long] = Article.parseLink(raw).distinct
     val redirect: Boolean = !Article.redirectPattern.findFirstIn(raw).isEmpty
     val stub: Boolean = !Article.stubPattern.findFirstIn(raw).isEmpty
     val disambig: Boolean = !Article.disambigPattern.findFirstIn(raw).isEmpty
@@ -87,12 +87,25 @@ object ParseWiki {
       res.toArray
     }
 
+    def formatTitle(title: String): String = {
+      title.trim.toLowerCase.replace(" ", "_")
+    }
+
+    def hashTitle(formatted: String): Long = {
+      var h: Long = 1125899906842597L
+      val len = formatted.length
+      for (i <- 0 until len) {
+        h = 31*h + formatted.charAt(i)
+      }
+      h
+    }
+
   }
 
 
   def main(args: Array[String]) {
-    if (args.length < 4) {
-      System.err.println("Usage: ParseWiki <file> <numslice> <path_to_save> <iter>")
+    if (args.length < 3) {
+      System.err.println("Usage: ParseWiki <file> <numslice> <path_to_save>")
       System.exit(1)
     }
 
@@ -116,18 +129,23 @@ object ParseWiki {
     val graph = allArtsRDD.filter(a => a.relevant).cache()
     println(graph.count)
     val links = graph.map(art => (art.title, art.links))
-    var ranks = links.mapValues(v => 1.0)
-
-    for (i <- 1 to ITER) {
-      val contribs = links.join(ranks).values.flatMap{ case (urls, rank) =>
-        val size = urls.size
-        urls.map(url => (url, rank / size))
-      }
-      ranks = contribs.reduceByKey(_ + _).mapValues(0.15 + 0.85 * _)
+    val result = links.flatMap{ case(title, links) =>
+      links.map(link => (s"${Article.hashTitle(Article.formatTitle(title))} ${Article.hashTitle(Article.formatTitle(link))}"))
     }
+    result.repartition(1).saveAsTextFile(PATH_TO_SAVE)
 
-    val output = ranks.collect()
-    output.foreach(tup => println(tup._1 + " has rank: " + tup._2 + "."))
+    // var ranks = links.mapValues(v => 1.0)
+
+    // for (i <- 1 to ITER) {
+    //   val contribs = links.join(ranks).values.flatMap{ case (urls, rank) =>
+    //     val size = urls.size
+    //     urls.map(url => (url, rank / size))
+    //   }
+    //   ranks = contribs.reduceByKey(_ + _).mapValues(0.15 + 0.85 * _)
+    // }
+
+    // val output = ranks.collect()
+    // output.foreach(tup => println(tup._1 + " has rank: " + tup._2 + "."))
 
     // graph.saveAsTextFile(PATH_TO_SAVE)
 
