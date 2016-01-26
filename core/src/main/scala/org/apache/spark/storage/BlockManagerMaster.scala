@@ -68,7 +68,7 @@ class BlockManagerMaster(
   }
 
   def registerShufflePipe(shuffleId: Int, reduceStatuses: Array[ReduceStatus]): Unit = {
-    while (conf.getInt("spark.slaves.number", 0) > 0 && getBlockManagerList().length != (conf.getInt("spark.slaves.number", 0) + 1)) {
+    while (conf.getInt("spark.slaves.number", 0) > 0 && getBlockManagerList().length < (conf.getInt("spark.slaves.number", 0) + 1)) {
       Thread.sleep(100)
     }
     val executors = new mutable.HashSet[String]()
