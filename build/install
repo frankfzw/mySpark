@@ -1,0 +1,7 @@
+cd ~
+rm -r spark-original
+mv spark spark-original
+git clone https://github.com/frankfzw/pipeSpark
+mv PipelineShuffle spark
+cd spark
+build/rebuild
