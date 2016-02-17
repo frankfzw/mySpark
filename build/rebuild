@@ -1,0 +1,17 @@
+
+if [[ ! -d sbin ]]; then
+    echo cannot find sbin, exit
+    exit 1
+fi
+
+build/mvn -Dhadoop.version=1.0.4 -Phadoop-1 -DskipTests clean package
+
+cp -n ../spark-original/conf/* conf
+grep scheduler conf/spark-defaults.conf || \
+    sed -i -e '1ispark.scheduler.pipe true\' conf/spark-defaults.conf
+
+rm logs/*
+
+sbin/stop-all.sh
+/root/spark-ec2/copy-dir --delete /root/spark
+sbin/start-all.sh

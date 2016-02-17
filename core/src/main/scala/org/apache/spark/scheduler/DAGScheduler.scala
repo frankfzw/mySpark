@@ -193,6 +193,7 @@ class DAGScheduler(
 
   // added by frankfzw
   private val pipeFlag = sc.getConf.getBoolean("spark.scheduler.pipe", false)
+  private val preSchedule = sc.getConf.getBoolean("spark.scheduler.preSchedule", false)
 
   /**
    * Called by the TaskSetManager to report task's starting.
@@ -1040,7 +1041,7 @@ class DAGScheduler(
       logDebug("submitStage(" + stage + ")")
       if (!waitingStages(stage) && !runningStages(stage) && !failedStages(stage)) {
         val missing = getMissingParentStages(stage).sortBy(_.id)
-        if (missing.isEmpty || (missing.filter(x => !runningStages.contains(x)).isEmpty && pipeFlag)) {
+        if (missing.isEmpty || (missing.filter(x => !runningStages.contains(x)).isEmpty && pipeFlag && preSchedule)) {
         // if (missing.isEmpty) {
           submitMissingTasks(stage, jobId.get)
         } else {
@@ -1175,12 +1176,12 @@ class DAGScheduler(
           }.toMap
         } else {
           executorDesignated = true
-          realPartitionsToCompute.map { id =>
+          partitionsToCompute.map { id =>
             val loc = if (sc.isLocal) {
-              for (rs <- reduceStatus if rs.partition == id)
+              for (rs <- reduceStatus if rs.partition == realPartitionsToCompute(id))
                 yield "localhost"
             } else {
-              for (rs <- reduceStatus if rs.partition == id)
+              for (rs <- reduceStatus if rs.partition == realPartitionsToCompute(id))
                 yield executorIdToHost(rs.executorId)
             }
             val taskLocation = loc.toSeq.map(TaskLocation(_))
