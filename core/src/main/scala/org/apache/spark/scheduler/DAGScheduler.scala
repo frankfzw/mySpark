@@ -1170,8 +1170,8 @@ class DAGScheduler(
         }
         if (reduceStatus == null) {
           logInfo(s"frankfzw: Stage ${stage.id} doesn't have  pending shuffle")
-          realPartitionsToCompute.map { id =>
-            (id, getPreferredLocs(stage.rdd, id))
+          partitionsToCompute.map { id =>
+            (id, getPreferredLocs(stage.rdd, realPartitionsToCompute(id)))
           }.toMap
         } else {
           executorDesignated = true
