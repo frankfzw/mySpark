@@ -187,9 +187,9 @@ class DAGScheduler(
   private[scheduler] val eventProcessLoop = new DAGSchedulerEventProcessLoop(this)
   taskScheduler.setDAGScheduler(this)
 
-  // Mapping from executor id to executor host, which would be modified by
+  // added by frankfzw, the hash set of host list
   // SparkDeploySchedulerBackend when an executor is added or removed
-  var executorIdToHost = new HashMap[String, String]
+  val hostList = new HashSet[String]
 
   // added by frankfzw
   private val pipeFlag = sc.getConf.getBoolean("spark.scheduler.pipe", false)
@@ -375,40 +375,40 @@ class DAGScheduler(
       for (dep <- shuffles) {
         val newReduceStatus = reduceStatuses.map {
           rs =>
-            val newRs = new ReduceStatus(rs.partition, rs.executorId)
+            val newRs = new ReduceStatus(rs.partition, rs.host)
             newRs.setTotalMapPartition(dep.rdd.partitions.length)
             newRs
         }
         mapOutputTracker.registerPendingReduce(dep.shuffleId, newReduceStatus)
       }
     } else {
-      val currentExecutors = executorIdToHost.keySet.toSeq
       reduceStatuses = new Array[ReduceStatus](partitions.length)
-      if (reduceStatuses.length < currentExecutors.length) {
+      val availableHosts = hostList.toArray
+      if (reduceStatuses.length < availableHosts.size) {
         for (i <- 0 until partitions.length) {
-          val executorId = if (sc.isLocal) {
-            SparkContext.DRIVER_IDENTIFIER
+          val host = if (sc.isLocal) {
+            "localhost"
           } else {
-            currentExecutors(Random.nextInt(currentExecutors.length))
+            availableHosts(Random.nextInt(availableHosts.size))
           }
-          val reduceStatus = new ReduceStatus(partitions(i), executorId)
+          val reduceStatus = new ReduceStatus(partitions(i), host)
           reduceStatuses(i) = reduceStatus
         }
       } else {
         for (i <- 0 until partitions.length) {
-          val executorId = if (sc.isLocal) {
-            SparkContext.DRIVER_IDENTIFIER
+          val host = if (sc.isLocal) {
+            "localhost"
           } else {
-            currentExecutors(i % currentExecutors.length)
+            availableHosts(i % availableHosts.length)
           }
-          val reduceStatus = new ReduceStatus(partitions(i), executorId)
+          val reduceStatus = new ReduceStatus(partitions(i), host)
           reduceStatuses(i) = reduceStatus
         }
       }
       for (dep <- shuffles) {
         val newReduceStatus = reduceStatuses.map {
           rs =>
-            val newRs = new ReduceStatus(rs.partition, rs.executorId)
+            val newRs = new ReduceStatus(rs.partition, rs.host)
             newRs.setTotalMapPartition(dep.rdd.partitions.length)
             newRs
         }
@@ -1177,13 +1177,7 @@ class DAGScheduler(
         } else {
           executorDesignated = true
           partitionsToCompute.map { id =>
-            val loc = if (sc.isLocal) {
-              for (rs <- reduceStatus if rs.partition == realPartitionsToCompute(id))
-                yield "localhost"
-            } else {
-              for (rs <- reduceStatus if rs.partition == realPartitionsToCompute(id))
-                yield executorIdToHost(rs.executorId)
-            }
+            val loc = for (rs <- reduceStatus if rs.partition == realPartitionsToCompute(id)) yield rs.host
             val taskLocation = loc.toSeq.map(TaskLocation(_))
 
             (id, taskLocation)

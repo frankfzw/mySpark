@@ -194,15 +194,11 @@ private[spark] class BlockManager(
 
   /**
    * added by frankfzw
-   * @param exeId
-   * @return the slave RpcEndpointRef of the corresponding BlockManager for the given executor
+   * @param host
+   * @return the slave RpcEndpointRef of the corresponding BlockManager for the given host address
    */
-  def getRemoteBlockManager(exeId: String): RpcEndpointRef = {
-    master.getRemoteBlockManager(exeId)
-  }
-
-  def getRemoteBlockManagerId(exeId: String): BlockManagerId = {
-    master.getRemoteBlockManagerId(exeId)
+  def getRemoteBlockManagerRpc(host: String): RpcEndpointRef = {
+    master.getRemoteBlockManagerRpc(host)
   }
 
   /**
@@ -241,7 +237,7 @@ private[spark] class BlockManager(
       shuffleIdToCachedBlockId += (shuffleId -> new Array[Array[(BlockId, Long)]](totalReducePartition))
       // find the reduce task that will run on this executor
       for (rs <- reduceStatuses) {
-        if (rs.executorId == blockManagerId.executorId) {
+        if (rs.host == blockManagerId.host) {
           shuffleFetchResultQueue(shuffleId)(rs.partition) = new LinkedBlockingQueue[FetchResult]()
           shuffleIdToReducePartition(shuffleId) += rs.partition
           shuffleIdToCachedBlockId(shuffleId)(rs.partition) = new Array[(BlockId, Long)](totalMapPartition)
@@ -307,16 +303,16 @@ private[spark] class BlockManager(
         logInfo(s"frankfzw: Shuffle: ${shuffleId}; map: ${mapPartition} finished")
         val reduceStatuses = mapOutputTracker.getReduceStatuses(shuffleId)
         val sizeArray = new Array[Long](reduceStatuses.length)
-        val executors = new mutable.HashSet[String]
+        val hosts = new mutable.HashSet[String]
         for (rs <- reduceStatuses) {
-          executors += rs.executorId
+          hosts += rs.host
           sizeArray(rs.partition) = mapStatus.getSizeForBlock(rs.partition)
         }
-        for (e <- executors) {
-          if (e == blockManagerId.executorId) {
+        for (h <- hosts) {
+          if (h == blockManagerId.host) {
             pipeEnd(shuffleId, mapPartition, blockManagerId, sizeArray)
           } else {
-            val rpcRef = getRemoteBlockManager(e)
+            val rpcRef = getRemoteBlockManagerRpc(h)
             val ret = rpcRef.askWithRetry[Boolean](PipeEnd(shuffleId, mapPartition, blockManagerId, sizeArray))
             if (!ret)
               throw new SparkException(s"frankfzw: The map ${mapPartition} of shuffle ${shuffleId} failed on notification")
