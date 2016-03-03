@@ -201,22 +201,6 @@ private[spark] class BlockManager(
     master.getRemoteBlockManagerRpc(host)
   }
 
-  /**
-   * added by frankfzw
-   * It's called by remote Task to write the key value into the memory
-   * @param key
-   * @param value
-   * @return
-   */
-  def remoteWrite(shuffleId: Int, reduceId: Int, key: Any, value: Any): Boolean = {
-    // logInfo(s"frankfzw: Receive the remote pushing data of shuffle ${shuffleId} : partition ${reduceId}; ${key} -> ${value}; ${shuffleIdToReducePartition(shuffleId).length}")
-    // val record = (key, value)
-    // if (!shuffleIdToReducePartition.contains(shuffleId) || shuffleIdToReducePartition(shuffleId)(reduceId) == null) {
-    //   throw new SparkException(s"frankfzw: remoteWrite wrong! id: ${shuffleId}; reduceID: ${reduceId}; cache: ${shuffleIdToReducePartition.keySet}; array buffer: ${shuffleIdToReducePartition.values}")
-    // }
-    // shuffleIdToReducePartition(shuffleId)(reduceId) += record
-    true
-  }
 
   /**
    * added by frankfzw
@@ -1564,9 +1548,6 @@ private[spark] object BlockManager extends Logging {
     blockManagers.toMap
   }
 
-  def writeRemote(remoteBlockManager: RpcEndpointRef, shuffleId: Int, reduceId: Int, key: Any, value: Any): Boolean = {
-    remoteBlockManager.askWithRetry[Boolean](WriteRemote(shuffleId, reduceId, key, value))
-  }
 
   def registerShufflePipe(blockManagerMaster: BlockManagerMaster, shuffleId: Int, reduceStatuses: Array[ReduceStatus]): Boolean = {
     // for(rs <- reduceStatuses) {

@@ -118,8 +118,6 @@ private[spark] object BlockManagerMessages {
 
   case class AskForRemoteBlockManagerId(executorId: String) extends ToBlockManagerMaster
 
-  case class WriteRemote(shuffleId: Int, reduceId: Int, key: Any, value: Any) extends ToBlockManagerSlave
-
   case class RegisterShufflePipe(shuffleId: Int) extends ToBlockManagerSlave
 
   case class PipeStart(shuffleId: Int, mapPartition: Int, mapExecutorId:String, reducePartition: Int) extends  ToBlockManagerSlave

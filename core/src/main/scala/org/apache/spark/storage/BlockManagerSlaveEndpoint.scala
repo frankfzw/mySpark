@@ -71,9 +71,6 @@ class BlockManagerSlaveEndpoint(
     case GetMatchingBlockIds(filter, _) =>
       context.reply(blockManager.getMatchingBlockIds(filter))
 
-    case WriteRemote(shuffleId, reduceId, key, value) =>
-      context.reply(blockManager.remoteWrite(shuffleId, reduceId, key, value))
-
     case RegisterShufflePipe(shuffleId) =>
       context.reply(blockManager.registerShufflePipe(shuffleId))
 

@@ -42,7 +42,6 @@ import org.apache.spark.serializer.Serializer;
 import org.apache.spark.serializer.SerializerInstance;
 import org.apache.spark.storage.*;
 import org.apache.spark.util.Utils;
-import org.apache.spark.storage.BlockManagerMessages.WriteRemote;
 import scala.tools.cmd.gen.AnyVals;
 
 /**
@@ -79,11 +78,6 @@ final class BypassMergeSortShuffleWriter<K, V> implements SortShuffleFileWriter<
   // added by frankfzw
   private HashMap<Integer, RpcEndpointRef> reduceIdToBlockManager = null;
 
-  @Override
-  public void setReduceStatus(HashMap<Integer, RpcEndpointRef> rIdToInfo) {
-    reduceIdToBlockManager = new HashMap<>();
-    reduceIdToBlockManager = rIdToInfo;
-  }
 
   private final BlockManager blockManager;
   private final Partitioner partitioner;
@@ -109,56 +103,7 @@ final class BypassMergeSortShuffleWriter<K, V> implements SortShuffleFileWriter<
     this.serializer = serializer;
   }
 
-  @Override
-  public void insertAllRemote(Iterator<Product2<K, V>> records, Integer shuffleId) throws IOException {
-    // logger.info("frankfzw: I'm insertAll with records " + records.size());
-    assert (partitionWriters == null);
-    if (!records.hasNext()) {
-      // logger.info("frankfzw: The records are empty");
-      return;
-    }
-    final SerializerInstance serInstance = serializer.newInstance();
-    final long openStartTime = System.nanoTime();
-    partitionWriters = new DiskBlockObjectWriter[numPartitions];
-    for (int i = 0; i < numPartitions; i++) {
-      final Tuple2<TempShuffleBlockId, File> tempShuffleBlockIdPlusFile =
-        blockManager.diskBlockManager().createTempShuffleBlock();
-      final File file = tempShuffleBlockIdPlusFile._2();
-      final BlockId blockId = tempShuffleBlockIdPlusFile._1();
-      partitionWriters[i] =
-        blockManager.getDiskWriter(blockId, file, serInstance, fileBufferSize, writeMetrics).open();
-    }
-    // Creating the file to write to and creating a disk writer both involve interacting with
-    // the disk, and can take a long time in aggregate when we open many files, so should be
-    // included in the shuffle write time.
-    writeMetrics.incShuffleWriteTime(System.nanoTime() - openStartTime);
 
-    // for (Map.Entry<Integer, BlockManagerInfo> entry : reduceIdToBlockManager.entrySet()) {
-    //   logger.info("frankfzw: Reduce status rid: " + entry.getKey() + "value: " + entry.getValue().slaveEndpoint().address());
-    // }
-    if (reduceIdToBlockManager != null && shuffleId != -1) {
-      // added by frankfzw, perfrom data pushing
-      while (records.hasNext()) {
-        final Product2<K, V> record = records.next();
-        final K key = record._1();
-        partitionWriters[partitioner.getPartition(key)].write(key, record._2());
-
-        int pid = partitioner.getPartition(key);
-        // frankfzw: It may cause an null exception
-        if (reduceIdToBlockManager.containsKey(pid))
-          BlockManager.writeRemote(reduceIdToBlockManager.get(pid), shuffleId, pid, key, record._2());
-        else
-          logger.info("frankfzw: No such reducer id " + pid);
-      }
-    } else {
-      logger.error("frankfzw: Unable to insert remote");
-    }
-
-
-    for (DiskBlockObjectWriter writer : partitionWriters) {
-      writer.commitAndClose();
-    }
-  }
 
   @Override
   public void insertAll(Iterator<Product2<K, V>> records) throws IOException {

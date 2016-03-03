@@ -39,7 +39,6 @@ public interface SortShuffleFileWriter<K, V> {
 
   void insertAll(Iterator<Product2<K, V>> records) throws IOException;
 
-  void insertAllRemote(Iterator<Product2<K, V>> records, Integer shuffleId) throws IOException;
   /**
    * Write all the data added into this shuffle sorter into a file in the disk store. This is
    * called by the SortShuffleWriter and can go through an efficient path of just concatenating
@@ -56,9 +55,4 @@ public interface SortShuffleFileWriter<K, V> {
 
   void stop() throws IOException;
 
-  /**
-   * added by frankfzw
-   * Called by SortShuffleWriter to add reduceIdToBlockManager
-   */
-  void setReduceStatus(HashMap<Integer, RpcEndpointRef> reduceIdToBlockManager);
 }

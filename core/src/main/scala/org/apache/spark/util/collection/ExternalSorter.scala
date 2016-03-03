@@ -20,9 +20,6 @@ package org.apache.spark.util.collection
 import java.io._
 import java.util.Comparator
 
-import org.apache.spark.rpc.RpcEndpointRef
-import org.apache.spark.storage.BlockManagerMessages.WriteRemote
-
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.mutable
 
@@ -119,8 +116,6 @@ private[spark] class ExternalSorter[K, V, C](
   private val ser = Serializer.getSerializer(serializer)
   private val serInstance = ser.newInstance()
 
-  // added by frankfzw
-  private var reduceIdToBlockManager: java.util.HashMap[Integer, RpcEndpointRef] = null
 
   // Use getSizeAsKb (not bytes) to maintain backwards compatibility if no units are provided
   private val fileBufferSize = conf.getSizeAsKb("spark.shuffle.file.buffer", "32k").toInt * 1024
@@ -199,54 +194,6 @@ private[spark] class ExternalSorter[K, V, C](
   private[spark] def numSpills: Int = spills.size
 
 
-  override def insertAllRemote(records: Iterator[Product2[K, V]], shuffleId: Integer): Unit = {
-    // TODO: stop combining if we find that the reduction factor isn't high
-    val shouldCombine = aggregator.isDefined
-
-    if (shouldCombine) {
-      // Combine values in-memory first using our AppendOnlyMap
-      val mergeValue = aggregator.get.mergeValue
-      val createCombiner = aggregator.get.createCombiner
-      var kv: Product2[K, V] = null
-      val update = (hadValue: Boolean, oldValue: C) => {
-        if (hadValue) mergeValue(oldValue, kv._2) else createCombiner(kv._2)
-      }
-      if (reduceIdToBlockManager != null && shuffleId != -1) {
-        // added by frankfzw, we don't perform merge here
-        // just send the record one by one
-        while (records.hasNext) {
-          addElementsRead()
-          kv = records.next()
-          val pid = getPartition(kv._1)
-          if (reduceIdToBlockManager.containsKey(pid))
-            BlockManager.writeRemote(reduceIdToBlockManager.get(pid), shuffleId, pid, kv._1, kv._2)
-          else
-            logInfo(s"frankfzw: No such reducer id ${pid}")
-          map.changeValue((getPartition(kv._1), kv._1), update)
-          maybeSpillCollection(usingMap = true)
-        }
-      } else {
-        logError("frankfzw: Unable to insert remote")
-      }
-
-    } else {
-      // Stick values into our buffer
-      if (reduceIdToBlockManager != null && shuffleId != -1) {
-        // added by frankfzw, we don't perform merge here
-        // just send the record one by one
-        while (records.hasNext) {
-          addElementsRead()
-          val kv = records.next()
-          val pid = getPartition(kv._1)
-          BlockManager.writeRemote(reduceIdToBlockManager.get(pid), shuffleId, pid, kv._1, kv._2)
-          buffer.insert(getPartition(kv._1), kv._1, kv._2.asInstanceOf[C])
-          maybeSpillCollection(usingMap = false)
-        }
-      } else {
-        logError("frankfzw: Unable to insert remote")
-      }
-    }
-  }
 
   override def insertAll(records: Iterator[Product2[K, V]]): Unit = {
     // TODO: stop combining if we find that the reduction factor isn't high
@@ -800,8 +747,4 @@ private[spark] class ExternalSorter[K, V, C](
     }
   }
 
-  override def setReduceStatus(ridToInfo: java.util.HashMap[Integer, RpcEndpointRef]): Unit = {
-    reduceIdToBlockManager = new java.util.HashMap[Integer, RpcEndpointRef]()
-    reduceIdToBlockManager = ridToInfo
-  }
 }

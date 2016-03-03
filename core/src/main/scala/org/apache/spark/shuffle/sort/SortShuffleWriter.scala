@@ -19,15 +19,11 @@ package org.apache.spark.shuffle.sort
 
 import org.apache.spark._
 import org.apache.spark.executor.ShuffleWriteMetrics
-import org.apache.spark.rpc.RpcEndpointRef
 import org.apache.spark.scheduler.MapStatus
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.shuffle.{IndexShuffleBlockResolver, ShuffleWriter, BaseShuffleHandle}
-import org.apache.spark.storage.BlockManagerMessages.WriteRemote
 import org.apache.spark.storage.{BlockManagerInfo, ShuffleBlockId}
 import org.apache.spark.util.collection.ExternalSorter
-import scala.collection.mutable
-import scala.collection.mutable.HashMap
 
 private[spark] class SortShuffleWriter[K, V, C](
     shuffleBlockResolver: IndexShuffleBlockResolver,
@@ -88,47 +84,6 @@ private[spark] class SortShuffleWriter[K, V, C](
 
   }
 
-  override def writeRemote(records: Iterator[Product2[K, V]], reduceIdToBlockManager: HashMap[Int, RpcEndpointRef]): Unit = {
-    sorter = if (dep.mapSideCombine) {
-      require(dep.aggregator.isDefined, "Map-side combine without Aggregator specified!")
-      new ExternalSorter[K, V, C](
-        dep.aggregator, Some(dep.partitioner), dep.keyOrdering, dep.serializer)
-    } else if (SortShuffleWriter.shouldBypassMergeSort(
-        SparkEnv.get.conf, dep.partitioner.numPartitions, aggregator = None, keyOrdering = None)) {
-      // If there are fewer than spark.shuffle.sort.bypassMergeThreshold partitions and we don't
-      // need local aggregation and sorting, write numPartitions files directly and just concatenate
-      // them at the end. This avoids doing serialization and deserialization twice to merge
-      // together the spilled files, which would happen with the normal code path. The downside is
-      // having multiple files open at a time and thus more memory allocated to buffers.
-      new BypassMergeSortShuffleWriter[K, V](SparkEnv.get.conf, blockManager, dep.partitioner,
-        writeMetrics, Serializer.getSerializer(dep.serializer))
-    } else {
-      // In this case we pass neither an aggregator nor an ordering to the sorter, because we don't
-      // care whether the keys get sorted in each partition; that will be done on the reduce side
-      // if the operation being run is sortByKey.
-      new ExternalSorter[K, V, V](
-        aggregator = None, Some(dep.partitioner), ordering = None, dep.serializer)
-    }
-    // added by frankfzw
-    // send the reduceIdToBlockManger to sorter
-    // convert to a java HashMap<Integer, BlockInfo> at first
-    val javaHashMap = new java.util.HashMap[Integer, RpcEndpointRef]()
-    reduceIdToBlockManager.foreach(kv => javaHashMap.put(Int.box(kv._1), kv._2))
-    sorter.setReduceStatus(javaHashMap)
-    sorter.insertAllRemote(records, dep.shuffleId)
-
-    // Don't bother including the time to open the merged output file in the shuffle write time,
-    // because it just opens a single file, so is typically too fast to measure accurately
-    // (see SPARK-3570).
-    val outputFile = shuffleBlockResolver.getDataFile(dep.shuffleId, mapId)
-    val blockId = ShuffleBlockId(dep.shuffleId, mapId, IndexShuffleBlockResolver.NOOP_REDUCE_ID)
-    val partitionLengths = sorter.writePartitionedFile(blockId, context, outputFile)
-    shuffleBlockResolver.writeIndexFile(dep.shuffleId, mapId, partitionLengths)
-
-    mapStatus = MapStatus(blockManager.shuffleServerId, partitionLengths)
-
-
-  }
 
   /** Close this writer, passing along whether the map completed */
   override def stop(success: Boolean): Option[MapStatus] = {

@@ -74,10 +74,6 @@ public class UnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {
   private final TaskMemoryManager memoryManager;
   private final ShuffleMemoryManager shuffleMemoryManager;
 
-  @Override
-  public void writeRemote(scala.collection.Iterator<Product2<K, V>> records, HashMap<Object, RpcEndpointRef> reduceIdToBlockManager) {
-
-  }
 
   private final SerializerInstance serializer;
   private final Partitioner partitioner;

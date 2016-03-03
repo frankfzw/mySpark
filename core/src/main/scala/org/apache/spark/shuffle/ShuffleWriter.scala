@@ -35,10 +35,4 @@ private[spark] abstract class ShuffleWriter[K, V] {
   /** Close this writer, passing along whether the map completed */
   def stop(success: Boolean): Option[MapStatus]
 
-  /**
-   * added by frankfzw
-   * write the record to the remote BlockManager
-   * @param records
-   */
-  def writeRemote(records: Iterator[Product2[K, V]], reduceIdToBlockManager: HashMap[Int, RpcEndpointRef]): Unit
 }
