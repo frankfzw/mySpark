@@ -69,6 +69,15 @@ class BlockManagerMaster(
     hostToRpcEndpointRef(host)
   }
 
+  /**
+   * added by frankfzw
+   * @param shuffleId
+   * @param mapPartition
+   */
+  def notifyMapTaskEnd(shuffleId: Int, mapPartition: Int): Unit = {
+    driverEndpoint.ask(MapTaskEnd(shuffleId, mapPartition))
+  }
+
   def registerShufflePipe(shuffleId: Int, reduceStatuses: Array[ReduceStatus]): Unit = {
     while (conf.getInt("spark.slaves.number", 0) > 0 && getBlockManagerListSize() < (conf.getInt("spark.slaves.number", 0) + 1)) {
       Thread.sleep(100)

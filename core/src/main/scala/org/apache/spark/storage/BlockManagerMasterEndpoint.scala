@@ -139,8 +139,15 @@ class BlockManagerMasterEndpoint(
     case AskForRemoteBlockManagerId(executorId) =>
       context.reply(getRemoteBlockManagerId(executorId))
 
+    case MapTaskEnd(shuffleId, mapPartitionId) =>
+      notifyMapTaskEnd(shuffleId, mapPartitionId)
+
   }
 
+  private def notifyMapTaskEnd(shuffleId: Int, mapPatitionId: Int): Unit = {
+    for (slave <- blockManagerInfo.values)
+      slave.slaveEndpoint.askWithRetry[Boolean](PipeEnd(shuffleId, mapPatitionId))
+  }
   /**
    * return the all active BlockManagerId
    * added by frankfzw

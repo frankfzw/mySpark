@@ -120,7 +120,7 @@ private[spark] object BlockManagerMessages {
 
   case class RegisterShufflePipe(shuffleId: Int) extends ToBlockManagerSlave
 
-  case class PipeStart(shuffleId: Int, mapPartition: Int, mapExecutorId:String, reducePartition: Int) extends  ToBlockManagerSlave
+  case class PipeEnd(shuffleId: Int, mapPartition: Int) extends ToBlockManagerSlave
 
-  case class PipeEnd(shuffleId: Int, mapPartition: Int, location: BlockManagerId, sizeArray: Array[Long]) extends ToBlockManagerSlave
+  case class MapTaskEnd(shuffleId: Int, mapPartition: Int) extends ToBlockManagerMaster
 }

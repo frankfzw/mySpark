@@ -42,7 +42,7 @@ import org.apache.spark.rdd.{ShuffledRDD, RDD}
 import org.apache.spark.rpc.RpcTimeout
 import org.apache.spark.storage._
 import org.apache.spark.util._
-import org.apache.spark.storage.BlockManagerMessages.BlockManagerHeartbeat
+import org.apache.spark.storage.BlockManagerMessages.{MapTaskEnd, BlockManagerHeartbeat}
 
 /**
  * The high-level scheduling layer that implements stage-oriented scheduling. It computes a DAG of
@@ -1407,6 +1407,9 @@ class DAGScheduler(
               logInfo(s"Ignoring possibly bogus $smt completion from executor $execId")
             } else {
               shuffleStage.addOutputLoc(smt.partitionId, status)
+              //added by frankfzw
+              mapOutputTracker.registerSingleMapOutput(shuffleStage.shuffleDep.shuffleId, smt.partitionId, status)
+              blockManagerMaster.notifyMapTaskEnd(shuffleStage.shuffleDep.shuffleId, smt.partitionId)
             }
 
             if (runningStages.contains(shuffleStage) && shuffleStage.pendingPartitions.isEmpty) {
