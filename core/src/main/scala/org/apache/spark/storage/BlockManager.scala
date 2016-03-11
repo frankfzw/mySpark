@@ -228,6 +228,7 @@ private[spark] class BlockManager(
         }
       }
       // logInfo(s"frankfzw: Shuffle registerd: id: ${shuffleId}, reduce partition: ${reducePartition}, lock: ${shuffleCacheStatus(shuffleId)(reducePartition)}, buffer: ${shuffleIdToReducePartition(shuffleId)(reducePartition)}")
+      mapOutputTracker.registerLocalShuffle(shuffleId, totalMapPartition)
     }
     // logError("frankfzw: This shuffle was registered before !")
     true

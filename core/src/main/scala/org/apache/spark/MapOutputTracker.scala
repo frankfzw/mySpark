@@ -269,6 +269,15 @@ private[spark] abstract class MapOutputTracker(conf: SparkConf) extends Logging 
     }
 
   }
+
+  def registerLocalShuffle(shuffleId: Int, mapPartitions: Int) = {
+    singleMapStatus += (shuffleId -> new Array[MapStatus](mapPartitions))
+  }
+
+  def unregisterLocalShuffle(shuffleId: Int) = {
+    if (singleMapStatus.contains(shuffleId))
+      singleMapStatus.remove(shuffleId)
+  }
   /**
    * Get or fetch the array of MapStatuses for a given shuffle ID. NOTE: clients MUST synchronize
    * on this array when reading it, because on the driver, we may be changing it in place.
