@@ -274,7 +274,7 @@ private[spark] class BlockManager(
       }
       true
     } else {
-      throw new SparkException(s"frankfzw: The shuffle ${shuffleId} is not registered")
+      logInfo(s"frankfzw: The shuffle ${shuffleId} is not registered on ${blockManagerId.host}")
       false
     }
   }

@@ -1408,8 +1408,10 @@ class DAGScheduler(
             } else {
               shuffleStage.addOutputLoc(smt.partitionId, status)
               //added by frankfzw
-              mapOutputTracker.registerSingleMapOutput(shuffleStage.shuffleDep.shuffleId, smt.partitionId, status)
-              blockManagerMaster.notifyMapTaskEnd(shuffleStage.shuffleDep.shuffleId, smt.partitionId)
+              if (pipeFlag) {
+                mapOutputTracker.registerSingleMapOutput(shuffleStage.shuffleDep.shuffleId, smt.partitionId, status)
+                blockManagerMaster.notifyMapTaskEnd(shuffleStage.shuffleDep.shuffleId, smt.partitionId)
+              }
             }
 
             if (runningStages.contains(shuffleStage) && shuffleStage.pendingPartitions.isEmpty) {
