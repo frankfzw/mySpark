@@ -251,12 +251,12 @@ private[spark] abstract class MapOutputTracker(conf: SparkConf) extends Logging 
       logDebug(s"frankfzw: Fetching map output statuses for shuffle $shuffleId:$mapId took " +
         s"${System.currentTimeMillis - startTime} ms")
       if (fetchedStatus != null) {
-        logInfo(s"frankfzw: Got the reduce locations for shuffle ${shuffleId}:$mapId")
+        logInfo(s"frankfzw: Got the map status for shuffle ${shuffleId}:$mapId")
         // for (s <- fetchedStatuses)
         //   logInfo(s"frankfzw: ShuffleId: ${shuffleId}; reduceId: ${s.partition}; executorId: ${s.executorId}")
         return  fetchedStatus
       } else {
-        logInfo(s"frankfzw: Missing all reduce locations for shuffle ${shuffleId}:$mapId. Is it because there is no pending stage?")
+        logInfo(s"frankfzw: Missing all map status for shuffle ${shuffleId}:$mapId. Is it because there is no pending stage?")
         // throw new MetadataFetchFailedException(
         //   shuffleId, -1, "Missing all reduce locations for shuffle " + shuffleId)
         null
@@ -472,7 +472,7 @@ private[spark] class MapOutputTrackerMaster(conf: SparkConf)
     array(mapId) = status
     val tmp = new Array[MapStatus](1)
     tmp(0) = singleMapStatus(shuffleId)(mapId)
-    val bytes = MapOutputTracker.serializeMapStatuses(array)
+    val bytes = MapOutputTracker.serializeMapStatuses(tmp)
     cachedSerializedSingleMapStatus(shuffleId)(mapId) = bytes
   }
 
