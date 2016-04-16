@@ -1,0 +1,9 @@
+0. register the reduce before generate the map. algorithm is needed here to make the performance better.
+
+1. start the shuffle map task, send the pipe metadata to the corresponding BlockManager which will run reduce taks later.
+
+2. submit a stage if all the parent stages are running.
+
+3. schedule the reduce tasks as soon as one of the map tasks finished.
+
+4. reduce tasks use the metadata from BlockManager to perform data fetch instead of asking the MapOutputTracker.
