@@ -74,3 +74,11 @@ metastore/
 warehouse/
 TempStatsStore/
 sql/hive-thriftserver/test_warehouses
+
+# Others
+No. 1 Flying Training School RAAF - Wikipedia, the free encyclopedia_files/
+No. 1 Flying Training School RAAF - Wikipedia, the free encyclopedia.html
+WordCount/
+Wikipedia-20160113121851.xml
+AkkaMsg/
+CHANGES.txt

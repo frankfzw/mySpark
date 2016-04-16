@@ -32,8 +32,6 @@ import org.apache.spark.shuffle.MetadataFetchFailedException
 import org.apache.spark.storage.{BlockId, BlockManagerId, ShuffleBlockId}
 import org.apache.spark.util._
 
-import scala.util.control.Breaks._
-
 private[spark] sealed trait MapOutputTrackerMessage
 private[spark] case class GetMapOutputStatuses(shuffleId: Int)
   extends MapOutputTrackerMessage
@@ -396,24 +394,16 @@ private[spark] class MapOutputTrackerMaster(conf: SparkConf)
       fractionThreshold: Double)
     : Option[Array[BlockManagerId]] = {
 
-    //logInfo("frankfzw: enter getLocationsWithLargestOutputs")
     if (mapStatuses.contains(shuffleId)) {
       val statuses = mapStatuses(shuffleId)
-      logInfo("frankfzw: mapStatuses size " + statuses.length + " status is empty " + statuses.nonEmpty + " class " + statuses.getClass +
-        " with shuffleId " + shuffleId + " and reducerId " + reducerId)
       if (statuses.nonEmpty) {
         // HashMap to add up sizes of all blocks at the same location
-        // print here
-        // statuses.foreach(println)
-        // TODO frankfzw the statues is not updated because the parent is not finished
         val locs = new HashMap[BlockManagerId, Long]
         var totalOutputSize = 0L
         var mapIdx = 0
         while (mapIdx < statuses.length) {
           val status = statuses(mapIdx)
-          logInfo("frankfzw: status " + statuses(mapIdx))
           val blockSize = status.getSizeForBlock(reducerId)
-          //logInfo("frankfzw: blockSize " + blockSize)
           if (blockSize > 0) {
             locs(status.location) = locs.getOrElse(status.location, 0L) + blockSize
             totalOutputSize += blockSize
@@ -423,16 +413,11 @@ private[spark] class MapOutputTrackerMaster(conf: SparkConf)
         val topLocs = locs.filter { case (loc, size) =>
           size.toDouble / totalOutputSize >= fractionThreshold
         }
-        logInfo("frankfzw: getLocationWithLargestOutputs with location number : " + topLocs.size)
         // Return if we have any locations which satisfy the required threshold
         if (topLocs.nonEmpty) {
           return Some(topLocs.map(_._1).toArray)
         }
-      } else {
-        logInfo("frankfzw: getLocationWithLargestOutputs failed: statues is empty")
       }
-    } else {
-      logInfo("frankfzw: getLocationWithLargestOutputs failed: no shuffleId " + shuffleId)
     }
     None
   }
@@ -551,20 +536,15 @@ private[spark] object MapOutputTracker extends Logging {
     assert (statuses != null)
     val splitsByAddress = new HashMap[BlockManagerId, ArrayBuffer[(BlockId, Long)]]
     for ((status, mapId) <- statuses.zipWithIndex) {
-      breakable {
       if (status == null) {
         val errorMessage = s"Missing an output location for shuffle $shuffleId"
         logError(errorMessage)
-        // frankfzw: skip the throw here, just return a empty one
-        // throw new MetadataFetchFailedException(shuffleId, startPartition, errorMessage)
-        splitsByAddress.clear()
-        break
+        throw new MetadataFetchFailedException(shuffleId, startPartition, errorMessage)
       } else {
         for (part <- startPartition until endPartition) {
           splitsByAddress.getOrElseUpdate(status.location, ArrayBuffer()) +=
             ((ShuffleBlockId(shuffleId, mapId, part), status.getSizeForBlock(part)))
         }
-      }
       }
     }
 

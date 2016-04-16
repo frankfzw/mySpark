@@ -123,13 +123,6 @@ final class ShuffleBlockFetcherIterator(
   }
 
   /**
-   * added by frankfzw
-   * @return true if the map isn't ready
-   */
-  def empty(): Boolean = {
-    blocksByAddress.length == 0
-  }
-  /**
    * Mark the iterator as zombie, and release all buffers that haven't been deserialized yet.
    */
   private[this] def cleanup() {

@@ -41,15 +41,6 @@ class BlockManagerMaster(
     logInfo("Removed " + execId + " successfully in removeExecutor")
   }
 
-  /**
-   * Get the all active BlockManagerId for random allocation
-   * added by frankfzw
-   * @return the list of BlockManagerId
-   */
-  def getBlockManagerList(): Seq[BlockManagerId] = {
-    driverEndpoint.askWithRetry[Seq[BlockManagerId]](GetBlockManagerList)
-  }
-
   /** Register the BlockManager's id with the driver. */
   def registerBlockManager(
       blockManagerId: BlockManagerId, maxMemSize: Long, slaveEndpoint: RpcEndpointRef): Unit = {
@@ -96,8 +87,8 @@ class BlockManagerMaster(
     driverEndpoint.askWithRetry[Seq[BlockManagerId]](GetPeers(blockManagerId))
   }
 
-  def getRpcHostPortForExecutor(executorId: String): Option[(String, Int)] = {
-    driverEndpoint.askWithRetry[Option[(String, Int)]](GetRpcHostPortForExecutor(executorId))
+  def getExecutorEndpointRef(executorId: String): Option[RpcEndpointRef] = {
+    driverEndpoint.askWithRetry[Option[RpcEndpointRef]](GetExecutorEndpointRef(executorId))
   }
 
   /**

@@ -103,7 +103,6 @@ private[spark] class CompressedMapStatus(
   override def location: BlockManagerId = loc
 
   override def getSizeForBlock(reduceId: Int): Long = {
-    //assert(reduceId < compressedSizes.length, s"CompressedMapStatus: reduceId ${reduceId} out of range")
     MapStatus.decompressSize(compressedSizes(reduceId))
   }
 
@@ -123,8 +122,7 @@ private[spark] class CompressedMapStatus(
 
 /**
  * A [[MapStatus]] implementation that only stores the average size of non-empty blocks,
- * plus a bitmap for tracking which blocks are empty.  During serialization, this bitmap
- * is compressed.
+ * plus a bitmap for tracking which blocks are empty.
  *
  * @param loc location where the task is being executed
  * @param numNonEmptyBlocks the number of non-empty blocks
@@ -195,6 +193,8 @@ private[spark] object HighlyCompressedMapStatus {
     } else {
       0
     }
+    emptyBlocks.trim()
+    emptyBlocks.runOptimize()
     new HighlyCompressedMapStatus(loc, numNonEmptyBlocks, emptyBlocks, avgSize)
   }
 }
