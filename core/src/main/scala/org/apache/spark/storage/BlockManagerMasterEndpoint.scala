@@ -145,8 +145,11 @@ class BlockManagerMasterEndpoint(
   }
 
   private def notifyMapTaskEnd(shuffleId: Int, mapPatitionId: Int): Unit = {
-    for (slave <- blockManagerInfo.values)
+    for (bid <- blockManagerInfo.keys if !bid.isDriver) {
+      val slave = blockManagerInfo(bid)
       slave.slaveEndpoint.askWithRetry[Boolean](PipeEnd(shuffleId, mapPatitionId))
+    }
+
   }
   /**
    * return the all active BlockManagerId
