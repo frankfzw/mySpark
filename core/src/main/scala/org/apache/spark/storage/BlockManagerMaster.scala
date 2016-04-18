@@ -37,7 +37,8 @@ class BlockManagerMaster(
 
   val timeout = RpcUtils.askRpcTimeout(conf)
 
-  val executorIdToRpcEndpointRef = new mutable.HashMap[String, RpcEndpointRef]
+  // added by frankfzw, cache the mapping from host address to RpcRef
+  val hostToRpcEndpointRef = new mutable.HashMap[String, RpcEndpointRef]
 
   /** Remove a dead executor from the driver endpoint. This is only called on the driver side. */
   def removeExecutor(execId: String) {
@@ -47,60 +48,61 @@ class BlockManagerMaster(
 
   /**
    * added by frankfzw
-   * Fetch the remote BlockManager by executor id
-   * @param executorId
+   * Fetch the remote BlockManager by host address
+   * @param host
    * @return null if the remote BlockManager is not ready
    */
-  def getRemoteBlockManager(executorId: String): RpcEndpointRef = {
-    if (!executorIdToRpcEndpointRef.contains(executorId)) {
-      val ref = driverEndpoint.askWithRetry[Option[RpcEndpointRef]](AskForRemoteBlockManager(executorId))
+  def getRemoteBlockManagerRpc(host: String): RpcEndpointRef = {
+    if (!hostToRpcEndpointRef.contains(host)) {
+      val ref = driverEndpoint.askWithRetry[Option[RpcEndpointRef]](AskForRemoteBlockManagerRpc(host))
       ref match {
         case Some(rpcRef) =>
-          executorIdToRpcEndpointRef.synchronized {
-            executorIdToRpcEndpointRef.getOrElseUpdate(executorId, rpcRef)
-          }
+          // hostToRpcEndpointRef.synchronized {
+          //   hostToRpcEndpointRef.getOrElseUpdate(host, rpcRef)
+          // }
+          hostToRpcEndpointRef.getOrElseUpdate(host, rpcRef)
         case None =>
           return null
       }
 
     }
-    executorIdToRpcEndpointRef(executorId)
+    hostToRpcEndpointRef(host)
+  }
+
+  /**
+   * added by frankfzw
+   * @param shuffleId
+   * @param mapPartition
+   */
+  def notifyMapTaskEnd(shuffleId: Int, mapPartition: Int): Unit = {
+    driverEndpoint.ask(MapTaskEnd(shuffleId, mapPartition))
   }
 
   def registerShufflePipe(shuffleId: Int, reduceStatuses: Array[ReduceStatus]): Unit = {
-    while (conf.getInt("spark.slaves.number", 0) > 0 && getBlockManagerList().length < (conf.getInt("spark.slaves.number", 0) + 1)) {
+    while (conf.getInt("spark.slaves.number", 0) > 0 && getBlockManagerListSize() < (conf.getInt("spark.slaves.number", 0) + 1)) {
       Thread.sleep(100)
     }
-    val executors = new mutable.HashSet[String]()
+    val hosts = new mutable.HashSet[String]()
     for (rs <- reduceStatuses)
-      executors += rs.executorId
-    for (e <- executors) {
-      val rpcRef = getRemoteBlockManager(e)
+      hosts += rs.host
+    for (h <- hosts) {
+      val rpcRef = getRemoteBlockManagerRpc(h)
       if (rpcRef == null) {
-        logError(s"frankfzw: The remote ${e} is not ready")
-        throw new SparkException(s"frankfzw: The remote ${e} is not ready")
+        logError(s"frankfzw: The remote ${h} is not ready")
+        throw new SparkException(s"frankfzw: The remote ${h} is not ready")
       }
       rpcRef.askWithRetry[Boolean](RegisterShufflePipe(shuffleId))
     }
   }
 
-  /**
-   * added by frankfzw
-   * Fetch the remote BlockManagerId by executor id
-   * @param executorId
-   * @return
-   */
-  def getRemoteBlockManagerId(executorId: String): BlockManagerId = {
-    driverEndpoint.askWithRetry[BlockManagerId](AskForRemoteBlockMangerId(executorId))
-  }
 
   /**
    * Get the all active BlockManagerId for random allocation
    * added by frankfzw
-   * @return the list of BlockManagerId
+   * @return the size of list of BlockManagerId
    */
-  def getBlockManagerList(): Seq[BlockManagerId] = {
-    driverEndpoint.askWithRetry[Seq[BlockManagerId]](GetBlockManagerList)
+  def getBlockManagerListSize(): Int = {
+    driverEndpoint.askWithRetry[Int](GetBlockManagerListSize)
   }
 
   /** Register the BlockManager's id with the driver. */

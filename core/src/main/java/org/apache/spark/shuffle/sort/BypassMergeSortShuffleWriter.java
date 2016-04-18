@@ -78,6 +78,8 @@ final class BypassMergeSortShuffleWriter<K, V> extends ShuffleWriter<K, V> {
   private final int fileBufferSize;
   private final boolean transferToEnabled;
   private final int numPartitions;
+
+
   private final BlockManager blockManager;
   private final Partitioner partitioner;
   private final ShuffleWriteMetrics writeMetrics;
@@ -119,6 +121,7 @@ final class BypassMergeSortShuffleWriter<K, V> extends ShuffleWriter<K, V> {
     this.serializer = Serializer.getSerializer(dep.serializer());
     this.shuffleBlockResolver = shuffleBlockResolver;
   }
+
 
   @Override
   public void write(Iterator<Product2<K, V>> records) throws IOException {

@@ -20,9 +20,9 @@ package org.apache.spark.shuffle.sort
 import org.apache.spark._
 import org.apache.spark.executor.ShuffleWriteMetrics
 import org.apache.spark.scheduler.MapStatus
-import org.apache.spark.shuffle.{BaseShuffleHandle, IndexShuffleBlockResolver, ShuffleWriter}
-import org.apache.spark.storage.ShuffleBlockId
 import org.apache.spark.util.Utils
+import org.apache.spark.shuffle.{IndexShuffleBlockResolver, ShuffleWriter, BaseShuffleHandle}
+import org.apache.spark.storage.{BlockManagerInfo, ShuffleBlockId}
 import org.apache.spark.util.collection.ExternalSorter
 
 private[spark] class SortShuffleWriter[K, V, C](
@@ -73,6 +73,7 @@ private[spark] class SortShuffleWriter[K, V, C](
     shuffleBlockResolver.writeIndexFileAndCommit(dep.shuffleId, mapId, partitionLengths, tmp)
     mapStatus = MapStatus(blockManager.shuffleServerId, partitionLengths)
   }
+
 
   /** Close this writer, passing along whether the map completed */
   override def stop(success: Boolean): Option[MapStatus] = {

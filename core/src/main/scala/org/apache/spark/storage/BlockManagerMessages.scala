@@ -116,18 +116,16 @@ private[spark] object BlockManagerMessages {
 
   case class HasCachedBlocks(executorId: String) extends ToBlockManagerMaster
 
-  case object GetBlockManagerList extends ToBlockManagerMaster
+  case object GetBlockManagerListSize extends ToBlockManagerMaster
 
   // added by frankfzw. Fetch the remote blockMangerSlaveEndPoint
-  case class AskForRemoteBlockManager(executorId: String) extends ToBlockManagerMaster
+  case class AskForRemoteBlockManagerRpc(executorId: String) extends ToBlockManagerMaster
 
-  case class AskForRemoteBlockMangerId(executorId: String) extends ToBlockManagerMaster
-
-  case class WriteRemote(shuffleId: Int, reduceId: Int, key: Any, value: Any) extends ToBlockManagerSlave
+  case class AskForRemoteBlockManagerId(executorId: String) extends ToBlockManagerMaster
 
   case class RegisterShufflePipe(shuffleId: Int) extends ToBlockManagerSlave
 
-  case class PipeStart(shuffleId: Int, mapPartition: Int, mapExecutorId:String, reducePartition: Int) extends  ToBlockManagerSlave
+  case class PipeEnd(shuffleId: Int, mapPartition: Int) extends ToBlockManagerSlave
 
-  case class PipeEnd(shuffleId: Int, mapPartition: Int, location: BlockManagerId, sizeArray: Array[Long]) extends ToBlockManagerSlave
+  case class MapTaskEnd(shuffleId: Int, mapPartition: Int) extends ToBlockManagerMaster
 }

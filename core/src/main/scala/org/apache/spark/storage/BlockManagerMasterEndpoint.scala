@@ -54,6 +54,9 @@ class BlockManagerMasterEndpoint(
   private val askThreadPool = ThreadUtils.newDaemonCachedThreadPool("block-manager-ask-thread-pool")
   private implicit val askExecutionContext = ExecutionContext.fromExecutorService(askThreadPool)
 
+  // added by frankfzw, Mapping from host address to BlockManagerId
+  private val hostToBlockManagerId = new mutable.HashMap[String, BlockManagerId]
+
   override def receiveAndReply(context: RpcCallContext): PartialFunction[Any, Unit] = {
     case RegisterBlockManager(blockManagerId, maxMemSize, slaveEndpoint) =>
       register(blockManagerId, maxMemSize, slaveEndpoint)
@@ -113,6 +116,9 @@ class BlockManagerMasterEndpoint(
     case BlockManagerHeartbeat(blockManagerId) =>
       context.reply(heartbeatReceived(blockManagerId))
 
+    case GetBlockManagerListSize =>
+      context.reply(getBolckManagerListSize())
+
     case HasCachedBlocks(executorId) =>
       blockManagerIdByExecutor.get(executorId) match {
         case Some(bm) =>
@@ -125,42 +131,53 @@ class BlockManagerMasterEndpoint(
         case None => context.reply(false)
       }
 
-      //added by frankfzw to fetch the remote blockManager
-    case AskForRemoteBlockManager(executorId) =>
-      context.reply(getRemoteBlockManager(executorId))
+      //added by frankfzw to fetch the remote blockManager rpc ref
+    case AskForRemoteBlockManagerRpc(host) =>
+      context.reply(getRemoteBlockManagerRpc(host))
 
-    case AskForRemoteBlockMangerId(executorId) =>
+    case AskForRemoteBlockManagerId(executorId) =>
       context.reply(getRemoteBlockManagerId(executorId))
+
+    case MapTaskEnd(shuffleId, mapPartitionId) =>
+      notifyMapTaskEnd(shuffleId, mapPartitionId)
 
   }
 
+  private def notifyMapTaskEnd(shuffleId: Int, mapPatitionId: Int): Unit = {
+    logInfo(s"frankfzw: Shuffle:${shuffleId}, Map Task:${mapPatitionId} finished! Start to notify all nodes")
+    for (bid <- blockManagerInfo.keys) {
+      val slave = blockManagerInfo(bid)
+      slave.slaveEndpoint.askWithRetry[Boolean](PipeEnd(shuffleId, mapPatitionId))
+    }
+
+  }
   /**
    * return the all active BlockManagerId
    * added by frankfzw
-   * @return
+   * @return the number of live block manager
    */
-  private def getBolckManagerList(): Seq[BlockManagerId] = {
-    blockManagerInfo.keySet.toSeq
+  private def getBolckManagerListSize(): Int = {
+    blockManagerInfo.keySet.toSeq.size
   }
 
   /**
    * added by frankfzw
    * Called by Executor to fetch the remote BlockManager
-   * @param executorId
+   * @param host
    * @return the slave RpcEndpointRef of the corresponding BlockManager for the given executor
    */
-  private def getRemoteBlockManager(executorId: String): Option[RpcEndpointRef] = {
-    if (blockManagerIdByExecutor.contains(executorId)) {
-      val blockManagerId = blockManagerIdByExecutor(executorId)
+  private def getRemoteBlockManagerRpc(host: String): Option[RpcEndpointRef] = {
+    if (hostToBlockManagerId.contains(host)) {
+      val blockManagerId = hostToBlockManagerId(host)
       if (blockManagerInfo.contains(blockManagerId)) {
         // logInfo(s"frankfzw: getRemoteBlockManager: executorId: ${executorId}, blockManagerId: ${blockManagerId}")
         Some(blockManagerInfo(blockManagerId).slaveEndpoint)
       } else {
-        logError(s"Missing blockManagerId ${blockManagerId} in blockManagerInfo")
+        logError(s"frankfzw: Missing blockManagerId ${blockManagerId} in blockManagerInfo")
         None
       }
     } else {
-      logError(s"Missing executorId ${executorId} in blockManagerIdByExecutor")
+      logError(s"frankfzw: The BlockManager is not ready on host: ${host}")
       None
     }
   }
@@ -227,6 +244,9 @@ class BlockManagerMasterEndpoint(
 
     // Remove the block manager from blockManagerIdByExecutor.
     blockManagerIdByExecutor -= blockManagerId.executorId
+
+    // added by frankfzw. Remove the block manaer from hostToBlockManagerId
+    hostToBlockManagerId -= blockManagerId.host
 
     // Remove it from blockManagerInfo and remove all the blocks.
     blockManagerInfo.remove(blockManagerId)
@@ -362,6 +382,10 @@ class BlockManagerMasterEndpoint(
 
       blockManagerInfo(id) = new BlockManagerInfo(
         id, System.currentTimeMillis(), maxMemSize, slaveEndpoint)
+
+      //added by frankfzw
+      hostToBlockManagerId += (id.host -> id)
+      logInfo(s"frankfzw: Registering block manager ${id} on ${id.host}")
     }
     listenerBus.post(SparkListenerBlockManagerAdded(time, id, maxMemSize))
   }

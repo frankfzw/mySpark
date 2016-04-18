@@ -21,13 +21,10 @@ import java.io.IOException
 
 import org.apache.spark._
 import org.apache.spark.executor.ShuffleWriteMetrics
-import org.apache.spark.rpc.RpcEndpointRef
 import org.apache.spark.scheduler.MapStatus
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.shuffle._
-import org.apache.spark.storage.BlockManagerMessages.WriteRemote
 import org.apache.spark.storage.{BlockManager, BlockManagerInfo, DiskBlockObjectWriter}
-import scala.collection.mutable.HashMap
 
 private[spark] class HashShuffleWriter[K, V](
     shuffleBlockResolver: FileShuffleBlockResolver,
