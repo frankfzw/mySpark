@@ -17,23 +17,35 @@
 
 package org.apache.spark.scheduler
 
-import java.util.Properties
+import java.io.{ObjectInput, ObjectOutput, Externalizable}
 
+import org.apache.spark.util.Utils
+import org.apache.spark.storage.BlockManagerId
 /**
- * A set of tasks submitted together to the low-level TaskScheduler, usually representing
- * missing partitions of a particular stage.
+ * Created by frankfzw on 15-11-9.
  */
+private[spark] class ReduceStatus(var partition: Int, var executorId: String) extends Externalizable{
 
-// add a pipeFlag to calculate the locality
-// added by frankfzw
-private[spark] class TaskSet(
-    val tasks: Array[Task[_]],
-    val stageId: Int,
-    val stageAttemptId: Int,
-    val priority: Int,
-    val properties: Properties,
-    val executorDesignated: Boolean = false) {
-    val id: String = stageId + "." + stageAttemptId
+  private var totalMapPartition:Int = 0;
 
-  override def toString: String = "TaskSet " + id
+  protected def this() = this(0, null)
+
+  override def readExternal(in: ObjectInput): Unit = {
+    partition = in.readInt()
+    executorId = in.readUTF()
+    totalMapPartition = in.readInt()
+  }
+
+  override def writeExternal(out: ObjectOutput): Unit = {
+    out.writeInt(partition)
+    out.writeUTF(executorId)
+    out.writeInt(totalMapPartition)
+  }
+
+  def setTotalMapPartition(num: Int): Unit = {
+    totalMapPartition = num
+  }
+
+  def getTotalMapPartiton(): Int = totalMapPartition
+
 }

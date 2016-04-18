@@ -19,12 +19,16 @@ package org.apache.spark.scheduler
 
 import java.nio.ByteBuffer
 
+import org.apache.spark.rpc.RpcEndpointRef
+import org.apache.spark.storage.{BlockManager, BlockManagerInfo, BlockManagerId}
+
 import scala.language.existentials
 
 import org.apache.spark._
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.shuffle.ShuffleWriter
+import scala.collection.mutable.HashMap
 
 /**
  * A ShuffleMapTask divides the elements of an RDD into multiple buckets (based on a partitioner
@@ -48,6 +52,42 @@ private[spark] class ShuffleMapTask(
   extends Task[MapStatus](stageId, stageAttemptId, partition.index, internalAccumulators)
   with Logging {
 
+  /**
+   * added by frankfzw
+   * It's more straightforward way to get the corresponding shuffleId without deserialize the task binary
+   */
+  private var shuffleId: Int = -1
+
+  /**
+   * added by frankfzw
+   * It's the flag of whether it should pipe Shuffle
+   */
+  private var pipeFlag: Boolean = false
+  // private var reduceStatuses: Array[ReduceStatus] = null
+  private var targetBlockManger: HashMap[Int, RpcEndpointRef] = null
+
+  private var executorId: String = null
+
+  def setShuffleId(sId: Int): Unit = {
+    shuffleId = sId
+  }
+
+  def getShuffleId(): Int = {
+    shuffleId
+  }
+
+  def getName(): String = {
+    this.getClass.getName
+  }
+
+  def setPipeFlag(pIdToBlockManager: HashMap[Int, RpcEndpointRef], eId: String): Unit = {
+    pipeFlag = true
+    targetBlockManger = new HashMap[Int, RpcEndpointRef]()
+    targetBlockManger = pIdToBlockManager
+    executorId = eId
+    // targetBlockManger.foreach(kv => logInfo(s"frankfzw: Target BlockManger ${kv._1} : ${kv._2.slaveEndpoint.address}"))
+  }
+
   /** A constructor used only in test suites. This does not require passing in an RDD. */
   def this(partitionId: Int) {
     this(0, 0, null, new Partition { override def index: Int = 0 }, null, null)
@@ -70,8 +110,23 @@ private[spark] class ShuffleMapTask(
     try {
       val manager = SparkEnv.get.shuffleManager
       writer = manager.getWriter[Any, Any](dep.shuffleHandle, partitionId, context)
+      // logInfo(s"frankfzw: wirter class is ${writer.getClass.getName}")
+      // writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])
+      // if (pipeFlag) {
+      //   // targetBlockManger.foreach(kv => logInfo(s"frankfzw: Target BlockManger ${kv._1} : ${kv._2.slaveEndpoint.address}"))
+      //   for (kv <- targetBlockManger) {
+      //     BlockManager.pipeStart(kv._2, shuffleId, partitionId, executorId, kv._1)
+      //   }
+      //   writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])
+      // } else {
+      //   writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])
+      // }
       writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])
-      writer.stop(success = true).get
+      val ret = writer.stop(success = true).get
+      // for (kv <- targetBlockManger) {
+      //   BlockManager.pipeEnd(kv._2, shuffleId, partitionId, kv._1, ret.getSizeForBlock(kv._1))
+      // }
+      ret
     } catch {
       case e: Exception =>
         try {
@@ -89,4 +144,12 @@ private[spark] class ShuffleMapTask(
   override def preferredLocations: Seq[TaskLocation] = preferredLocs
 
   override def toString: String = "ShuffleMapTask(%d, %d)".format(stageId, partitionId)
+
+}
+
+private[spark] object ShuffleMapTask {
+  def getName(): String = {
+    val name = this.getClass.getName
+    name.substring(0, name.length - 1)
+  }
 }

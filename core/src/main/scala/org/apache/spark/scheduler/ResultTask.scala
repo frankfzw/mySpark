@@ -53,8 +53,7 @@ private[spark] class ResultTask[T, U](
   @transient private[this] val preferredLocs: Seq[TaskLocation] = {
     if (locs == null) Nil else locs.toSet.toSeq
   }
-
-  override def runTask(context: TaskContext): U = {
+override def runTask(context: TaskContext): U = {
     // Deserialize the RDD and the func using the broadcast variables.
     val deserializeStartTime = System.currentTimeMillis()
     val ser = SparkEnv.get.closureSerializer.newInstance()
@@ -63,6 +62,11 @@ private[spark] class ResultTask[T, U](
     _executorDeserializeTime = System.currentTimeMillis() - deserializeStartTime
 
     metrics = Some(context.taskMetrics)
+    // val it = rdd.iterator(partition, context)
+    // while (it.hasNext) {
+    //   val kv = it.next()
+    //   println(s"frankfzw: The kv is ${kv}")
+    // }
     func(context, rdd.iterator(partition, context))
   }
 

@@ -66,3 +66,59 @@ handleTaskCompletion    //DAGScheduler.scala
     ResultTask:
     ShuffleMapTask: //confused about "Mark any map-stage jobs waiting on this stage as fininshed"
     submitWaitingStages()
+
+
+
+// submit and run tasks
+
+Parameter of TaskDescription.scala, set by TaskSetManager.resourceOffer
+    serializedTask is a ByteBuffer containing the serialized Task
+    a Task is the combination of stage.id, partition, location and the most important, taskBinary
+    The taskBinary is a serialized data structure, which contains the stage.rdd and dependency or function of the task
+
+We have to levarage the ShuffleDependency in Task to get the shuffleId and than get the corresponding ReduceStatus
+
+DAGScheduler
+submitMissingTasks
+stage --> to tasks:
+    task id is the partition number of stage, location is the BlockMangerId
+    The tasks are serialized with stage.rdd and dependency(if it's a ShuffleMapStage) to taskBinary
+    Then the Task was built with taskBinary and the stage.id, partition and location
+    submitTasks to taskScheduler through the TaskSet
+
+TaskSchedulerImpl
+submitTasks
+create TaskSetManager which contains a TaskSet
+backend.reviveOffers():
+    CoarseGrainedSchedulerBackend.reviveOffers()
+
+CoarseGrainedScheduerBackend
+reviverOffers: call makeOffers
+makeOffers:
+    call TaskScheduerImpl.resourceOffers with the set of workOffers
+
+    TaskSchedluerImpl
+    fill the set of workOffers with TaskDescription
+    call resourceOfferSingleTaskSet to fill the workOffer
+        it then call TaskSetManager.resourceOffer to serialize the Task to ByteBuffer with SparkContext
+        It than post a taskStarted to DAGScheduler
+        Finally it returns a TaskDescription with serializedTask and other metadata
+    return the Array of TaskDescription which contains the tasks that are going to run
+
+    call launchTasks
+
+launchTasks:
+    The input(Seq[Seq[TaskDescription]]) is a two demensional array representing the set of tasks on each executor
+    It serialized the task description at first
+    And then send to the corresponding executor (allocated by TaskSchedulerImpl and the TaskSetManager)
+
+The executorEndpoint is a CoarseGrainedExecutorBackend
+
+CoarseGrainedExecutorBackend:
+receive the LaunchTask with the TaskDescription
+call executor.lauchTask
+
+Executor
+launchTask
+    use TaskRunner to run the task
+    it deserialize the ByteBuffer to get the Task

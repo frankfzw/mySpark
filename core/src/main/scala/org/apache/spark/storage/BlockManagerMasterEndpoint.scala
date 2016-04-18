@@ -124,6 +124,52 @@ class BlockManagerMasterEndpoint(
           }
         case None => context.reply(false)
       }
+
+      //added by frankfzw to fetch the remote blockManager
+    case AskForRemoteBlockManager(executorId) =>
+      context.reply(getRemoteBlockManager(executorId))
+
+    case AskForRemoteBlockMangerId(executorId) =>
+      context.reply(getRemoteBlockManagerId(executorId))
+
+  }
+
+  /**
+   * return the all active BlockManagerId
+   * added by frankfzw
+   * @return
+   */
+  private def getBolckManagerList(): Seq[BlockManagerId] = {
+    blockManagerInfo.keySet.toSeq
+  }
+
+  /**
+   * added by frankfzw
+   * Called by Executor to fetch the remote BlockManager
+   * @param executorId
+   * @return the slave RpcEndpointRef of the corresponding BlockManager for the given executor
+   */
+  private def getRemoteBlockManager(executorId: String): Option[RpcEndpointRef] = {
+    if (blockManagerIdByExecutor.contains(executorId)) {
+      val blockManagerId = blockManagerIdByExecutor(executorId)
+      if (blockManagerInfo.contains(blockManagerId)) {
+        // logInfo(s"frankfzw: getRemoteBlockManager: executorId: ${executorId}, blockManagerId: ${blockManagerId}")
+        Some(blockManagerInfo(blockManagerId).slaveEndpoint)
+      } else {
+        logError(s"Missing blockManagerId ${blockManagerId} in blockManagerInfo")
+        None
+      }
+    } else {
+      logError(s"Missing executorId ${executorId} in blockManagerIdByExecutor")
+      None
+    }
+  }
+
+  private def getRemoteBlockManagerId(executorId: String): BlockManagerId = {
+    if (blockManagerIdByExecutor.contains(executorId))
+      blockManagerIdByExecutor(executorId)
+    else
+      throw new IllegalArgumentException(s"frankfzw: Missing executorId ${executorId}")
   }
 
   private def removeRdd(rddId: Int): Future[Seq[Int]] = {
@@ -401,6 +447,7 @@ class BlockManagerMasterEndpoint(
   override def onStop(): Unit = {
     askThreadPool.shutdownNow()
   }
+
 }
 
 @DeveloperApi

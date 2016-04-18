@@ -73,6 +73,15 @@ class BlockManagerSlaveEndpoint(
 
     case TriggerThreadDump =>
       context.reply(Utils.getThreadDump())
+
+    case WriteRemote(shuffleId, reduceId, key, value) =>
+      context.reply(blockManager.remoteWrite(shuffleId, reduceId, key, value))
+
+    case RegisterShufflePipe(shuffleId) =>
+      context.reply(blockManager.registerShufflePipe(shuffleId))
+
+    case PipeEnd(shuffleId, mapPartition, location, sizeArray) =>
+      context.reply(blockManager.pipeEnd(shuffleId, mapPartition, location, sizeArray))
   }
 
   private def doAsync[T](actionMessage: String, context: RpcCallContext)(body: => T) {

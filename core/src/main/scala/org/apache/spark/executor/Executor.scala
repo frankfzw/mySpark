@@ -23,6 +23,8 @@ import java.net.URL
 import java.nio.ByteBuffer
 import java.util.concurrent.{ConcurrentHashMap, TimeUnit}
 
+import org.apache.spark.rpc.RpcEndpointRef
+
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 import scala.util.control.NonFatal
@@ -34,6 +36,9 @@ import org.apache.spark.rpc.RpcTimeout
 import org.apache.spark.scheduler.{DirectTaskResult, IndirectTaskResult, Task}
 import org.apache.spark.shuffle.FetchFailedException
 import org.apache.spark.storage.{StorageLevel, TaskResultBlockId}
+import org.apache.spark.scheduler._
+import org.apache.spark.shuffle.FetchFailedException
+import org.apache.spark.storage.{BlockManagerInfo, StorageLevel, TaskResultBlockId}
 import org.apache.spark.util._
 
 /**
@@ -194,6 +199,9 @@ private[spark] class Executor(
         task = ser.deserialize[Task[Any]](taskBytes, Thread.currentThread.getContextClassLoader)
         task.setTaskMemoryManager(taskMemoryManager)
 
+        // TODO frankfzw find out what kind of task it is and the shuffleId if necessary
+        // logInfo("frankfzw: task type " + task.getClass.getName + " target: " + ShuffleMapTask.getName() + " compare result: " + (task.getClass.getName == ShuffleMapTask.getName()))
+
         // If this task has been killed before we deserialized it, let's quit now. Otherwise,
         // continue executing the task.
         if (killed) {
@@ -235,6 +243,16 @@ private[spark] class Executor(
           throw new TaskKilledException
         }
 
+        // added by frankfzw
+        // pipe shuffle ended here
+        // logInfo(s"frankfzw: task ${taskId}, ${task.getClass}, ${task.getClass.getName}. target: ${ShuffleMapTask.getClass.getName}. answer ${task.getClass.getName == ShuffleMapTask.getClass.getName}")
+        if (task.getClass.getName == ShuffleMapTask.getName) {
+          val shuffleId = task.asInstanceOf[ShuffleMapTask].getShuffleId()
+          if (shuffleId != -1) {
+            // logInfo(s"frankfzw: task: ${task}; shuffleId: ${shuffleId}")
+            env.blockManager.remotePipeEnd(shuffleId, task.partitionId, value.asInstanceOf[MapStatus])
+          }
+        }
         val resultSer = env.serializer.newInstance()
         val beforeSerialization = System.currentTimeMillis()
         val valueBytes = resultSer.serialize(value)

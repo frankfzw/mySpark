@@ -19,7 +19,10 @@ package org.apache.spark.shuffle
 
 import java.io.IOException
 
+import org.apache.spark.rpc.RpcEndpointRef
 import org.apache.spark.scheduler.MapStatus
+import org.apache.spark.storage.BlockManagerInfo
+import scala.collection.mutable.HashMap
 
 /**
  * Obtained inside a map task to write out records to the shuffle system.
@@ -31,4 +34,5 @@ private[spark] abstract class ShuffleWriter[K, V] {
 
   /** Close this writer, passing along whether the map completed */
   def stop(success: Boolean): Option[MapStatus]
+
 }

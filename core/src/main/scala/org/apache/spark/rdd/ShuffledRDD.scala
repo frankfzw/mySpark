@@ -97,6 +97,7 @@ class ShuffledRDD[K: ClassTag, V: ClassTag, C: ClassTag](
     SparkEnv.get.shuffleManager.getReader(dep.shuffleHandle, split.index, split.index + 1, context)
       .read()
       .asInstanceOf[Iterator[(K, C)]]
+    // logInfo(s"frankfzw: Got the iterator ${ret.length}")
   }
 
   override def clearDependencies() {

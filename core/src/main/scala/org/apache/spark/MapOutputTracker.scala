@@ -27,7 +27,7 @@ import scala.collection.mutable.{ArrayBuffer, HashMap, HashSet, Map}
 import scala.reflect.ClassTag
 
 import org.apache.spark.rpc.{RpcEndpointRef, RpcEnv, RpcCallContext, RpcEndpoint}
-import org.apache.spark.scheduler.MapStatus
+import org.apache.spark.scheduler.{ReduceStatus, MapStatus}
 import org.apache.spark.shuffle.MetadataFetchFailedException
 import org.apache.spark.storage.{BlockId, BlockManagerId, ShuffleBlockId}
 import org.apache.spark.util._
@@ -35,6 +35,9 @@ import org.apache.spark.util._
 private[spark] sealed trait MapOutputTrackerMessage
 private[spark] case class GetMapOutputStatuses(shuffleId: Int)
   extends MapOutputTrackerMessage
+// frankfzw: add a message to fetch the reduce status
+private[spark] case class GetReduceStatus(shuffleId: Int) extends MapOutputTrackerMessage
+
 private[spark] case object StopMapOutputTracker extends MapOutputTrackerMessage
 
 /** RpcEndpoint class for MapOutputTrackerMaster */
@@ -60,6 +63,25 @@ private[spark] class MapOutputTrackerMasterEndpoint(
         context.sendFailure(exception)
       } else {
         context.reply(mapOutputStatuses)
+      }
+
+    case GetReduceStatus(shuffleId: Int) =>
+      // TODO frankfzw return the serialized Array of ReduceStatus
+      val hostPort = context.senderAddress.hostPort
+      logInfo("frankfzw: Asked to send reduce location for shuffle " + shuffleId + " to " + hostPort)
+      val reduceStatus = tracker.getSerializedReduceStatuses(shuffleId)
+      val serializedSize = reduceStatus.length
+      if (serializedSize > maxAkkaFrameSize) {
+        val msg = s"Map output statuses were $serializedSize bytes which " +
+          s"exceeds spark.akka.frameSize ($maxAkkaFrameSize bytes)."
+
+        /* For SPARK-1244 we'll opt for just logging an error and then sending it to the sender.
+         * A bigger refactoring (SPARK-1239) will ultimately remove this entire code path. */
+        val exception = new SparkException(msg)
+        logError(msg, exception)
+        context.sendFailure(exception)
+      } else {
+        context.reply(reduceStatus)
       }
 
     case StopMapOutputTracker =>
@@ -90,6 +112,16 @@ private[spark] abstract class MapOutputTracker(conf: SparkConf) extends Logging 
    * thread-safe map.
    */
   protected val mapStatuses: Map[Int, Array[MapStatus]]
+
+  /**
+   * added by frankfzw
+   *
+   * This HashMap stores the shuffleId and the corresponding reducer data
+   *
+   * On the driver, it serves as the source of reduce location updated by getRandomLocs the DAGScheduler
+   * On the executors, it simply serves as a cache, like the mapStatuses
+   */
+  protected val reduceStatuses: Map[Int, Array[ReduceStatus]]
 
   /**
    * Incremented every time a fetch fails so that client nodes know to clear
@@ -235,6 +267,37 @@ private[spark] abstract class MapOutputTracker(conf: SparkConf) extends Logging 
     }
   }
 
+  def getReduceStatuses(shuffleId: Int): Array[ReduceStatus] = {
+    val statuses = reduceStatuses.get(shuffleId).orNull
+    if (statuses == null) {
+      // TODO frankfzw ask the MapOutputTrackerMaster to get the new data.
+      val startTime = System.currentTimeMillis
+      logInfo("frankfzw: Don't have reduce location for shuffle " + shuffleId + ", fetching them; tracker endpoint = " + trackerEndpoint)
+      val fetchedBytes = askTracker[Array[Byte]](GetReduceStatus(shuffleId))
+      val fetchedStatuses = MapOutputTracker.deserializeReduceStatuses(fetchedBytes)
+
+      reduceStatuses.put(shuffleId, fetchedStatuses)
+      logDebug(s"Fetching map output statuses for shuffle $shuffleId took " +
+        s"${System.currentTimeMillis - startTime} ms")
+      if (fetchedStatuses != null) {
+        logInfo(s"frankfzw: Got the reduce locations for shuffle ${shuffleId} with size ${fetchedStatuses.length}")
+        // for (s <- fetchedStatuses)
+        //   logInfo(s"frankfzw: ShuffleId: ${shuffleId}; reduceId: ${s.partition}; executorId: ${s.executorId}")
+        return fetchedStatuses
+      } else {
+        logInfo(s"frankfzw: Missing all reduce locations for shuffle ${shuffleId}. Is it because there is no pending stage?")
+        // throw new MetadataFetchFailedException(
+        //   shuffleId, -1, "Missing all reduce locations for shuffle " + shuffleId)
+        null
+      }
+    } else {
+      // for (s <- statuses) {
+      //   logInfo(s"frankfzw: The reduce status of ${shuffleId}: ${s}; map ${s.getTotalMapPartiton()}; reduce ${s.partition}; exeId ${s.executorId}")
+      // }
+      return statuses
+    }
+  }
+
   /** Called to get current epoch number. */
   def getEpoch: Long = {
     epochLock.synchronized {
@@ -299,6 +362,12 @@ private[spark] class MapOutputTrackerMaster(conf: SparkConf)
   protected val mapStatuses = new TimeStampedHashMap[Int, Array[MapStatus]]()
   private val cachedSerializedStatuses = new TimeStampedHashMap[Int, Array[Byte]]()
 
+  /**
+   * These two hashmap are used to store reduce statues for the pipe shuffle
+   */
+  protected  val reduceStatuses = new TimeStampedHashMap[Int, Array[ReduceStatus]]()
+  private val cachedReduceStatuses = new TimeStampedHashMap[Int, Array[Byte]]()
+
   // For cleaning up TimeStampedHashMaps
   private val metadataCleaner =
     new MetadataCleaner(MetadataCleanerType.MAP_OUTPUT_TRACKER, this.cleanup, conf)
@@ -349,6 +418,37 @@ private[spark] class MapOutputTrackerMaster(conf: SparkConf)
   /** Check if the given shuffle is being tracked */
   def containsShuffle(shuffleId: Int): Boolean = {
     cachedSerializedStatuses.contains(shuffleId) || mapStatuses.contains(shuffleId)
+  }
+
+  def containsPendingReduce(shuffleId: Int): Boolean = {
+    cachedReduceStatuses.contains(shuffleId) || reduceStatuses.contains(shuffleId)
+  }
+
+  /**
+   * added by frankfzw
+   * @param shuffleId
+   * @param statuses
+   */
+  def registerPendingReduce(shuffleId: Int, statuses: Array[ReduceStatus]): Unit = {
+    // TODO frankfzw finish it without handling fault
+    if (!mapStatuses.contains(shuffleId)) {
+      throw new IllegalArgumentException("Shuffle " + shuffleId + " is not registered yet")
+    }
+    if (reduceStatuses.contains(shuffleId)) {
+      logWarning("frankfzw: shuffleId " + shuffleId + " is registered again!!!")
+      // reduceStatuses.update(shuffleId, statuses)
+    } else {
+      logInfo("frankfzw: register shuffle " + shuffleId + " with statuses " + statuses.length)
+      // for(s <- statuses)
+      //   logInfo("frankfzw: register shuffle " + shuffleId + " with statuses map: " + s.getTotalMapPartiton() + "; reduce: " + s.partition + "; exeId: " + s.executorId)
+      reduceStatuses += (shuffleId -> statuses)
+    }
+
+  }
+
+  def unregisterPendingReduce(shuffleId: Int): Unit = {
+    reduceStatuses.remove(shuffleId)
+    cachedReduceStatuses.remove(shuffleId)
   }
 
   /**
@@ -458,17 +558,35 @@ private[spark] class MapOutputTrackerMaster(conf: SparkConf)
     bytes
   }
 
+  def getSerializedReduceStatuses(shuffleId: Int): Array[Byte] = {
+    var statuses: Array[ReduceStatus] = null
+    cachedReduceStatuses.get(shuffleId) match {
+      case Some(bytes) =>
+        return bytes
+      case None =>
+        statuses = reduceStatuses.getOrElse(shuffleId, Array[ReduceStatus]())
+    }
+    val bytes = MapOutputTracker.serializeReduceStatuses(statuses)
+    bytes
+  }
   override def stop() {
     sendTracker(StopMapOutputTracker)
     mapStatuses.clear()
+    // frankfzw clean up reduce statueses
+    reduceStatuses.clear()
     trackerEndpoint = null
     metadataCleaner.cancel()
+    cachedSerializedStatuses.clear()
     cachedSerializedStatuses.clear()
   }
 
   private def cleanup(cleanupTime: Long) {
     mapStatuses.clearOldValues(cleanupTime)
     cachedSerializedStatuses.clearOldValues(cleanupTime)
+
+    // frankfzw clean up the reduce statuses
+    reduceStatuses.clearOldValues(cleanupTime)
+    cachedReduceStatuses.clearOldValues(cleanupTime)
   }
 }
 
@@ -479,6 +597,8 @@ private[spark] class MapOutputTrackerMaster(conf: SparkConf)
 private[spark] class MapOutputTrackerWorker(conf: SparkConf) extends MapOutputTracker(conf) {
   protected val mapStatuses: Map[Int, Array[MapStatus]] =
     new ConcurrentHashMap[Int, Array[MapStatus]]().asScala
+  protected val reduceStatuses: Map[Int, Array[ReduceStatus]] =
+    new ConcurrentHashMap[Int, Array[ReduceStatus]]().asScala
 }
 
 private[spark] object MapOutputTracker extends Logging {
@@ -512,6 +632,31 @@ private[spark] object MapOutputTracker extends Logging {
     }
   }
 
+  // frankfzw: do the same thing as the serializeMapStatuses and the deserializeMapStatuses
+  def serializeReduceStatuses(statuses: Array[ReduceStatus]): Array[Byte] = {
+    val out = new ByteArrayOutputStream
+    val objOut = new ObjectOutputStream(new GZIPOutputStream(out))
+    Utils.tryWithSafeFinally {
+      // Since statuses can be modified in parallel, sync on it
+      statuses.synchronized {
+        objOut.writeObject(statuses)
+      }
+    } {
+      objOut.close()
+    }
+    out.toByteArray
+  }
+
+  // Opposite of serializeReduceStatuses.
+  def deserializeReduceStatuses(bytes: Array[Byte]): Array[ReduceStatus] = {
+    val objIn = new ObjectInputStream(new GZIPInputStream(new ByteArrayInputStream(bytes)))
+    Utils.tryWithSafeFinally {
+      objIn.readObject().asInstanceOf[Array[ReduceStatus]]
+    } {
+      objIn.close()
+    }
+  }
+
   /**
    * Given an array of map statuses and a range of map output partitions, returns a sequence that,
    * for each block manager ID, lists the shuffle block IDs and corresponding shuffle block sizes
@@ -537,7 +682,7 @@ private[spark] object MapOutputTracker extends Logging {
     val splitsByAddress = new HashMap[BlockManagerId, ArrayBuffer[(BlockId, Long)]]
     for ((status, mapId) <- statuses.zipWithIndex) {
       if (status == null) {
-        val errorMessage = s"Missing an output location for shuffle $shuffleId"
+        val errorMessage = s"Missing an output location for shuffle $shuffleId, partition from ${startPartition} to ${endPartition}"
         logError(errorMessage)
         throw new MetadataFetchFailedException(shuffleId, startPartition, errorMessage)
       } else {

@@ -100,10 +100,15 @@ private[spark] case class TestBlockId(id: String) extends BlockId {
   override def name: String = "test_" + id
 }
 
+private[spark] case class CacheShuffleBlockId(shuffleId: Int, mapId: Int, reduceId: Int) extends BlockId {
+  override def name: String = "cache_shuffle_" + shuffleId + "_" + mapId + "_" + reduceId
+}
+
 @DeveloperApi
 object BlockId {
   val RDD = "rdd_([0-9]+)_([0-9]+)".r
   val SHUFFLE = "shuffle_([0-9]+)_([0-9]+)_([0-9]+)".r
+  val CACHE_SHUFFLE = "cache_shuffle_([0-9]+)_([0-9]+)_([0-9]+)".r
   val SHUFFLE_DATA = "shuffle_([0-9]+)_([0-9]+)_([0-9]+).data".r
   val SHUFFLE_INDEX = "shuffle_([0-9]+)_([0-9]+)_([0-9]+).index".r
   val BROADCAST = "broadcast_([0-9]+)([_A-Za-z0-9]*)".r
@@ -129,6 +134,8 @@ object BlockId {
       StreamBlockId(streamId.toInt, uniqueId.toLong)
     case TEST(value) =>
       TestBlockId(value)
+    case CACHE_SHUFFLE(shuffleId, mapId, reduceId) =>
+      CacheShuffleBlockId(shuffleId.toInt, mapId.toInt, reduceId.toInt)
     case _ =>
       throw new IllegalStateException("Unrecognized BlockId: " + id)
   }
