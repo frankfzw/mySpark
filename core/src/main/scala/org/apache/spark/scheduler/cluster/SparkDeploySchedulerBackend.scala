@@ -133,10 +133,6 @@ private[spark] class SparkDeploySchedulerBackend(
     memory: Int) {
     logInfo("Granted executor ID %s on hostPort %s with %d cores, %s RAM".format(
       fullId, hostPort, cores, Utils.megabytesToString(memory)))
-    val executorId = fullId.split("/")(1)
-    val host = hostPort.split(":")(0)
-    // sc.dagScheduler.executorIdToHost(executorId) = host
-    sc.dagScheduler.hostList += host
   }
 
   override def executorRemoved(fullId: String, message: String, exitStatus: Option[Int]) {
@@ -147,7 +143,6 @@ private[spark] class SparkDeploySchedulerBackend(
     logInfo("Executor %s removed: %s".format(fullId, message))
     removeExecutor(fullId.split("/")(1), reason)
     // sc.dagScheduler.executorIdToHost -= fullId.split("/")(1)
-    sc.dagScheduler.hostList -= fullId.split("/")(1)
   }
 
   override def sufficientResourcesRegistered(): Boolean = {
