@@ -264,17 +264,17 @@ private[spark] class BlockManager(
    * @return true if the shuffle is registered
    */
   def pipeEnd(shuffleId: Int, mapPartition: Int): Boolean = {
-    if (shuffleIdToReducePartition.contains(shuffleId)) {
-      val mapStatus = mapOutputTracker.getSingleMapStatus(shuffleId, mapPartition)
-      for (reducePartition <- shuffleIdToReducePartition(shuffleId)) {
-        val size = mapStatus.getSizeForBlock(reducePartition)
-        sendRequest(mapStatus.location, shuffleId, mapPartition, reducePartition, size)
-      }
-      true
-    } else {
-      logInfo(s"frankfzw: The shuffle ${shuffleId} is not registered on ${blockManagerId.host}")
-      false
+    if (blockManagerId.isDriver)
+      return true
+    if (!shuffleIdToReducePartition.contains(shuffleId))
+      registerShufflePipe(shuffleId)
+
+    val mapStatus = mapOutputTracker.getSingleMapStatus(shuffleId, mapPartition)
+    for (reducePartition <- shuffleIdToReducePartition(shuffleId)) {
+      val size = mapStatus.getSizeForBlock(reducePartition)
+      sendRequest(mapStatus.location, shuffleId, mapPartition, reducePartition, size)
     }
+    true
   }
 
   // def remotePipeEnd(shuffleId: Int, mapPartition: Int, mapStatus: MapStatus): Unit = {

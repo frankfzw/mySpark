@@ -362,6 +362,9 @@ class DAGScheduler(
     while (waitingForVisit.nonEmpty) {
       visit(waitingForVisit.pop())
     }
+    if (shuffles.size == 0)
+      return parents.toList
+
     breakable {
       for (dep <- shuffles) {
         if (mapOutputTracker.containsPendingReduce(dep.shuffleId)) {
@@ -1137,10 +1140,10 @@ class DAGScheduler(
           case s: ShuffleMapStage =>
             // val (idToLoaction: Map[Int, Seq[TaskLocation]], reduceStatuses: Array[ReduceStatus]) = getRandomLocs(stage.id, partitionsToCompute.toList)
             // mapOutputTracker.registerPendingReduce(s.shuffleDep.shuffleId, reduceStatuses)
-            if (pipeFlag) {
-              val reduceStatuses = mapOutputTracker.getReduceStatuses(s.shuffleDep.shuffleId)
-              blockManagerMaster.registerShufflePipe(s.shuffleDep.shuffleId, reduceStatuses)
-            }
+            // if (pipeFlag) {
+            //   val reduceStatuses = mapOutputTracker.getReduceStatuses(s.shuffleDep.shuffleId)
+            //   blockManagerMaster.registerShufflePipe(s.shuffleDep.shuffleId, reduceStatuses)
+            // }
             realPartitionsToCompute = partitionsToCompute
             // val ret = partitionsToCompute.map { id => (id, getPreferredLocs(stage.rdd, id))}.toMap
             // ret
@@ -1174,13 +1177,13 @@ class DAGScheduler(
         }
         if (reduceStatus == null) {
           logInfo(s"frankfzw: Stage ${stage.id} doesn't have  pending shuffle")
-          partitionsToCompute.map { id =>
-            (id, getPreferredLocs(stage.rdd, realPartitionsToCompute(id)))
+          realPartitionsToCompute.map { id =>
+            (id, getPreferredLocs(stage.rdd, id)))
           }.toMap
         } else {
           executorDesignated = true
-          partitionsToCompute.map { id =>
-            val loc = for (rs <- reduceStatus if rs.partition == realPartitionsToCompute(id)) yield rs.host
+          realPartitionsToCompute.map { id =>
+            val loc = for (rs <- reduceStatus if rs.partition == id) yield rs.host
             val taskLocation = loc.toSeq.map(TaskLocation(_))
 
             (id, taskLocation)
