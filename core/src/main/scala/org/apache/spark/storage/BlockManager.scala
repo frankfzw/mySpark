@@ -241,7 +241,11 @@ private[spark] class BlockManager(
    */
   def isCached(shuffleId: Int, reduceId: Int): Boolean = {
     if (shuffleIdToReducePartition.contains(shuffleId)) {
-      return shuffleIdToReducePartition(shuffleId).contains(reduceId)
+      if (shuffleIdToReducePartition(shuffleId).contains(reduceId)) {
+        shuffleIdToReducePartition(shuffleId) -= reduceId
+        return true
+      }
+      return false
     }
     false
   }
@@ -373,7 +377,7 @@ private[spark] class BlockManager(
       }
       buffer
     } else {
-      logInfo(s"frankfzw: Read cache from local ${shuffleId}: ${startPartition} to ${endPartition}")
+      logError(s"frankfzw: Code should never come to here yet! Read cache from local ${shuffleId}: ${startPartition} to ${endPartition}")
       val buffer = new Array[LinkedBlockingQueue[FetchResult]](endPartition - startPartition)
       for (i <- startPartition until endPartition) {
         for ((bId, size) <- shuffleIdToCachedBlockId(shuffleId)(i)) {
