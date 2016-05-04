@@ -26,6 +26,8 @@ import org.apache.spark.deploy.client.{AppClient, AppClientListener}
 import org.apache.spark.launcher.{LauncherBackend, SparkAppHandle}
 import org.apache.spark.scheduler._
 import org.apache.spark.util.Utils
+import java.net.InetAddress
+import java.net.UnknownHostException
 
 private[spark] class SparkDeploySchedulerBackend(
     scheduler: TaskSchedulerImpl,
@@ -133,6 +135,16 @@ private[spark] class SparkDeploySchedulerBackend(
     memory: Int) {
     logInfo("Granted executor ID %s on hostPort %s with %d cores, %s RAM".format(
       fullId, hostPort, cores, Utils.megabytesToString(memory)))
+    val executorId = fullId.split("/")(1)
+    val host = hostPort.split(":")(0)
+    // sc.dagScheduler.executorIdToHost(executorId) = host
+    try {
+      val hostname = InetAddress.getByName(host).getHostName();
+      sc.dagScheduler.hostList += hostname
+    } catch {
+      case e: UnknownHostException => throw e
+    }
+    
   }
 
   override def executorRemoved(fullId: String, message: String, exitStatus: Option[Int]) {
@@ -143,6 +155,13 @@ private[spark] class SparkDeploySchedulerBackend(
     logInfo("Executor %s removed: %s".format(fullId, message))
     removeExecutor(fullId.split("/")(1), reason)
     // sc.dagScheduler.executorIdToHost -= fullId.split("/")(1)
+    val host = fullId.split("/")(1)
+    try {
+      val hostname = InetAddress.getByName(host).getHostName();
+      sc.dagScheduler.hostList -= hostname
+    } catch {
+      case e: UnknownHostException => throw e
+    }
   }
 
   override def sufficientResourcesRegistered(): Boolean = {

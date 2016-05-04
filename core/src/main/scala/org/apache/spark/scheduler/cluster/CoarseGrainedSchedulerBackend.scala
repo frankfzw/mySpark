@@ -147,7 +147,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
             }
           logInfo(s"Registered executor $executorRef ($executorAddress) with ID $executorId")
           // added by frankfzw
-          scheduler.sc.dagScheduler.hostList += executorAddress.host
+          // scheduler.sc.dagScheduler.hostList += executorAddress.host
           addressToExecutorId(executorAddress) = executorId
           totalCoreCount.addAndGet(cores)
           totalRegisteredExecutors.addAndGet(1)
@@ -266,7 +266,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
           val killed = CoarseGrainedSchedulerBackend.this.synchronized {
             addressToExecutorId -= executorInfo.executorAddress
             // added by frankfzw
-            scheduler.sc.dagScheduler.hostList -= executorInfo.executorAddress.host
+            // scheduler.sc.dagScheduler.hostList -= executorInfo.executorAddress.host
             executorDataMap -= executorId
             executorsPendingLossReason -= executorId
             executorsPendingToRemove.remove(executorId).getOrElse(false)
