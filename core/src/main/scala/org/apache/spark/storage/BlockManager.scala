@@ -267,9 +267,12 @@ private[spark] class BlockManager(
   def pipeEnd(shuffleId: Int, mapPartition: Int, host: BlockManagerId): Boolean = {
     if (blockManagerId.isDriver)
       return true
-    if (!shuffleIdToReducePartition.contains(shuffleId))
-      registerShufflePipe(shuffleId)
-
+    if (!shuffleIdToReducePartition.contains(shuffleId)){
+      shuffleIdToReducePartition.synchronized {
+        if (!shuffleIdToReducePartition.contains(shuffleId))
+          registerShufflePipe(shuffleId)
+      }
+    }
     // val mapStatus = mapOutputTracker.getSingleMapStatus(shuffleId, mapPartition)
     for (reducePartition <- shuffleIdToReducePartition(shuffleId)) {
       val size = 10
@@ -294,6 +297,7 @@ private[spark] class BlockManager(
             pipeEnd(shuffleId, mapPartition, blockManagerId)
           } else {
             val rpcRef = getRemoteBlockManagerRpc(h)
+            logInfo(s"frankfzw: notify host ${h} rpc ref: ${rpcRef}")
             val ret = rpcRef.askWithRetry[Boolean](PipeEnd(shuffleId, mapPartition, blockManagerId))
             if (!ret)
               throw new SparkException(s"frankfzw: The map ${mapPartition} of shuffle ${shuffleId} failed on notification")

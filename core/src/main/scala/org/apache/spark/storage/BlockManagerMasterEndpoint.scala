@@ -168,9 +168,12 @@ class BlockManagerMasterEndpoint(
    */
   private def getRemoteBlockManagerRpc(host: String): Option[RpcEndpointRef] = {
     if (hostToBlockManagerId.contains(host)) {
+      for (bid <- blockManagerInfo.keys) {
+        logError(s"frankfzw: Block info list ${blockManagerInfo(bid)}")
+      }
       val blockManagerId = hostToBlockManagerId(host)
       if (blockManagerInfo.contains(blockManagerId)) {
-        // logInfo(s"frankfzw: getRemoteBlockManager: executorId: ${executorId}, blockManagerId: ${blockManagerId}")
+        logInfo(s"frankfzw: getRemoteBlockManager of ${host}, ${blockManagerInfo(blockManagerId).slaveEndpoint}")
         Some(blockManagerInfo(blockManagerId).slaveEndpoint)
       } else {
         logError(s"frankfzw: Missing blockManagerId ${blockManagerId} in blockManagerInfo")
@@ -385,7 +388,7 @@ class BlockManagerMasterEndpoint(
 
       //added by frankfzw
       hostToBlockManagerId += (id.host -> id)
-      logInfo(s"frankfzw: Registering block manager ${id} on ${id.host}")
+      logInfo(s"frankfzw: Registering block manager ${id} on ${id.host} with rpc ${slaveEndpoint}")
     }
     listenerBus.post(SparkListenerBlockManagerAdded(time, id, maxMemSize))
   }
