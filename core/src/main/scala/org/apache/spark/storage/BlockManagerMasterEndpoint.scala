@@ -144,11 +144,11 @@ class BlockManagerMasterEndpoint(
   }
 
   private def notifyMapTaskEnd(shuffleId: Int, mapPatitionId: Int): Unit = {
-    logInfo(s"frankfzw: Shuffle:${shuffleId}, Map Task:${mapPatitionId} finished! Start to notify all nodes")
-    for (bid <- blockManagerInfo.keys) {
-      val slave = blockManagerInfo(bid)
-      slave.slaveEndpoint.askWithRetry[Boolean](PipeEnd(shuffleId, mapPatitionId))
-    }
+    logError(s"frankfzw: You should never see this. Shuffle:${shuffleId}, Map Task:${mapPatitionId} finished! Start to notify all nodes")
+    // for (bid <- blockManagerInfo.keys) {
+    //   val slave = blockManagerInfo(bid)
+    //   slave.slaveEndpoint.askWithRetry[Boolean](PipeEnd(shuffleId, mapPatitionId))
+    // }
 
   }
   /**

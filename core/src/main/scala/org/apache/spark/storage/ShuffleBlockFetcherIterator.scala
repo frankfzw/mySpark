@@ -347,10 +347,15 @@ final class ShuffleBlockFetcherIterator(
         case LocalFetchResult(blockId, address, size) =>
           try {
             val buf = blockManager.getBlockData(blockId)
-            shuffleMetrics.incLocalBlocksFetched(1)
-            shuffleMetrics.incLocalBytesRead(buf.size)
-            buf.retain()
-            (blockId, new BufferReleasingInputStream(buf.createInputStream(), this))
+            if (buf.size() > 0) {
+              shuffleMetrics.incLocalBlocksFetched(1)
+              shuffleMetrics.incLocalBytesRead(buf.size)
+              buf.retain()
+              (blockId, new BufferReleasingInputStream(buf.createInputStream(), this))
+            } else {
+              (blockId, null)
+            }
+
           } catch {
             case NonFatal(t) =>
               throwFetchFailedException(blockId, address, t)
