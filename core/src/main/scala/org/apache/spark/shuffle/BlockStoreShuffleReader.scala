@@ -62,7 +62,7 @@ private[spark] class BlockStoreShuffleReader[K, C](
       val totalMapPartition = blockManager.getMapPartitionNumber(handle.shuffleId)
       val numbers = Array.fill[Int](endPartition - startPartition)(totalMapPartition)
       logInfo(s"frankfzw: Reading from local cache, shuffleId is ${handle.shuffleId}, startPartition: ${startPartition}, endPartition: ${endPartition}, total map partition: ${totalMapPartition}")
-      val requests = blockManager.getPendngFetchRequest(handle.shuffleId, startPartition, endPartition)
+      val requests = blockManager.getPendingFetchRequest(handle.shuffleId, startPartition, endPartition)
       blockFetcherItr = new ShuffleBlockFetcherIterator(
       context,
       blockManager.shuffleClient,

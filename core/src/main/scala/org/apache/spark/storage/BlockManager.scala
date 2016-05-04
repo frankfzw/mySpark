@@ -172,7 +172,7 @@ private[spark] class BlockManager(
   private lazy val compressionCodec: CompressionCodec = CompressionCodec.createCodec(conf)
 
   // added by frankfzw, cache the shuffle data
-  private val shuffleIdToReducePartition: HashMap[Int, ArrayBuffer[Int]] = new HashMap
+  private val shuffleIdToReducePartition: HashMap[Int, mutable.HashSet[Int]] = new HashMap
 
   // added by frankfzw. Do Bookkeeping for the state that whether the corresponding shuffle is cached
   private val shuffleIdToCacheCondition: HashMap[Int, Int] = new HashMap
@@ -214,7 +214,7 @@ private[spark] class BlockManager(
       val totalMapPartition = reduceStatuses(0).getTotalMapPartiton()
       shuffleIdToCacheCondition += (shuffleId -> 0)
       shuffleIdToMapPartitionNumber(shuffleId) = totalMapPartition
-      shuffleIdToReducePartition += (shuffleId -> new ArrayBuffer[Int]())
+      shuffleIdToReducePartition += (shuffleId -> new mutable.HashSet[Int]())
       shuffleFetchResultQueue += (shuffleId -> new Array[LinkedBlockingQueue[FetchResult]](totalReducePartition))
       shuffleIdToCachedBlockId += (shuffleId -> new Array[Array[(BlockId, Long)]](totalReducePartition))
       // find the reduce task that will run on this executor
@@ -357,31 +357,32 @@ private[spark] class BlockManager(
    * @param endPartition the end partition number of reduce, exclude
    * @return the FetchResult of remote data fetch
    */
-  def getPendngFetchRequest(shuffleId: Int, startPartition: Int, endPartition: Int): Array[LinkedBlockingQueue[FetchResult]] = {
-    if (shuffleIdToCacheCondition(shuffleId) < shuffleIdToReducePartition(shuffleId).length) {
-      logInfo(s"frankfzw: Read cache from LinkedBlockingQueue ${shuffleId}: ${startPartition} to ${endPartition}")
-      shuffleIdToCacheCondition(shuffleId) += endPartition - startPartition
-      val buffer = new Array[LinkedBlockingQueue[FetchResult]](endPartition - startPartition)
-      // val number = new Array[Int](endPartition - startPartition)
-      for (i <- startPartition until endPartition) {
-        buffer(i - startPartition) = shuffleFetchResultQueue(shuffleId)(i)
-        //number(i - startPartition) = shuffleFetchBlockNumber(shuffleId)(i)
-      }
-      buffer
-    } else {
-      logInfo(s"frankfzw: Read cache from local ${shuffleId}: ${startPartition} to ${endPartition}")
-      val buffer = new Array[LinkedBlockingQueue[FetchResult]](endPartition - startPartition)
-      for (i <- startPartition until endPartition) {
-        for ((bId, size) <- shuffleIdToCachedBlockId(shuffleId)(i)) {
-          if (size == BLOCK_EMPTY) {
-            buffer(i - startPartition).put(new EmptyFetchResult(bId, blockManagerId))
-          } else {
-            buffer(i - startPartition).put(new LocalFetchResult(bId, blockManagerId, size))
-          }
-        }
-      }
-      buffer
+  def getPendingFetchRequest(shuffleId: Int, startPartition: Int, endPartition: Int): Array[LinkedBlockingQueue[FetchResult]] = {
+    // if (shuffleIdToCacheCondition(shuffleId) < shuffleIdToReducePartition(shuffleId).length) {
+    logInfo(s"frankfzw: Read cache from LinkedBlockingQueue ${shuffleId}: ${startPartition} to ${endPartition}")
+    shuffleIdToCacheCondition(shuffleId) += endPartition - startPartition
+    val buffer = new Array[LinkedBlockingQueue[FetchResult]](endPartition - startPartition)
+    // val number = new Array[Int](endPartition - startPartition)
+    for (i <- startPartition until endPartition) {
+      shuffleIdToReducePartition(shuffleId) -= i
+      buffer(i - startPartition) = shuffleFetchResultQueue(shuffleId)(i)
+      //number(i - startPartition) = shuffleFetchBlockNumber(shuffleId)(i)
     }
+    buffer
+    // } else {
+    //   logInfo(s"frankfzw: Read cache from local ${shuffleId}: ${startPartition} to ${endPartition}")
+    //   val buffer = new Array[LinkedBlockingQueue[FetchResult]](endPartition - startPartition)
+    //   for (i <- startPartition until endPartition) {
+    //     for ((bId, size) <- shuffleIdToCachedBlockId(shuffleId)(i)) {
+    //       if (size == BLOCK_EMPTY) {
+    //         buffer(i - startPartition).put(new EmptyFetchResult(bId, blockManagerId))
+    //       } else {
+    //         buffer(i - startPartition).put(new LocalFetchResult(bId, blockManagerId, size))
+    //       }
+    //     }
+    //   }
+    //   buffer
+    // }
   }
 
   /**
