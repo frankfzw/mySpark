@@ -139,8 +139,13 @@ private[spark] class SparkDeploySchedulerBackend(
     val host = hostPort.split(":")(0)
     // sc.dagScheduler.executorIdToHost(executorId) = host
     try {
-      val hostname = InetAddress.getByName(host).getHostName();
-      sc.dagScheduler.hostList += hostname
+      if (sc.getConf.get("spark.rpc", "netty") == "netty") {
+        val hostname = InetAddress.getByName(host).getHostName();
+        sc.dagScheduler.hostList += hostname
+      } else {
+        sc.dagScheduler.hostList += host
+      }
+
     } catch {
       case e: UnknownHostException => throw e
     }
@@ -157,8 +162,13 @@ private[spark] class SparkDeploySchedulerBackend(
     // sc.dagScheduler.executorIdToHost -= fullId.split("/")(1)
     val host = fullId.split("/")(1)
     try {
-      val hostname = InetAddress.getByName(host).getHostName();
-      sc.dagScheduler.hostList -= hostname
+      if (sc.getConf.get("spark.rpc", "netty") == "netty") {
+        val hostname = InetAddress.getByName(host).getHostName();
+        sc.dagScheduler.hostList -= hostname
+      } else {
+        sc.dagScheduler.hostList -= host
+      }
+
     } catch {
       case e: UnknownHostException => throw e
     }

@@ -78,22 +78,22 @@ class BlockManagerMaster(
     driverEndpoint.ask(MapTaskEnd(shuffleId, mapPartition))
   }
 
-  def registerShufflePipe(shuffleId: Int, reduceStatuses: Array[ReduceStatus]): Unit = {
-    while (conf.getInt("spark.slaves.number", 0) > 0 && getBlockManagerListSize() < (conf.getInt("spark.slaves.number", 0) + 1)) {
-      Thread.sleep(100)
-    }
-    val hosts = new mutable.HashSet[String]()
-    for (rs <- reduceStatuses)
-      hosts += rs.host
-    for (h <- hosts) {
-      val rpcRef = getRemoteBlockManagerRpc(h)
-      if (rpcRef == null) {
-        logError(s"frankfzw: The remote ${h} is not ready")
-        throw new SparkException(s"frankfzw: The remote ${h} is not ready")
-      }
-      rpcRef.askWithRetry[Boolean](RegisterShufflePipe(shuffleId))
-    }
-  }
+  // def registerShufflePipe(shuffleId: Int, reduceStatuses: Array[ReduceStatus]): Unit = {
+  //   while (conf.getInt("spark.slaves.number", 0) > 0 && getBlockManagerListSize() < (conf.getInt("spark.slaves.number", 0) + 1)) {
+  //     Thread.sleep(100)
+  //   }
+  //   val hosts = new mutable.HashSet[String]()
+  //   for (rs <- reduceStatuses)
+  //     hosts += rs.host
+  //   for (h <- hosts) {
+  //     val rpcRef = getRemoteBlockManagerRpc(h)
+  //     if (rpcRef == null) {
+  //       logError(s"frankfzw: The remote ${h} is not ready")
+  //       throw new SparkException(s"frankfzw: The remote ${h} is not ready")
+  //     }
+  //     rpcRef.askWithRetry[Boolean](RegisterShufflePipe(shuffleId))
+  //   }
+  // }
 
 
   /**
