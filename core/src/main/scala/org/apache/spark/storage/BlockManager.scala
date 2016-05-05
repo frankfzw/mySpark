@@ -273,6 +273,7 @@ private[spark] class BlockManager(
           registerShufflePipe(shuffleId)
       }
     }
+    logInfo(s"frankfzw: Shuffle ${shuffleId}, map task ${mapPartition} finished on ${host}, start to fetch")
     // val mapStatus = mapOutputTracker.getSingleMapStatus(shuffleId, mapPartition)
     for (reducePartition <- shuffleIdToReducePartition(shuffleId)) {
       val size = 10
@@ -297,7 +298,7 @@ private[spark] class BlockManager(
             pipeEnd(shuffleId, mapPartition, blockManagerId)
           } else {
             val rpcRef = getRemoteBlockManagerRpc(h)
-            logInfo(s"frankfzw: notify host ${h} rpc ref: ${rpcRef}")
+            // logInfo(s"frankfzw: notify host ${h} rpc ref: ${rpcRef}")
             val ret = rpcRef.askWithRetry[Boolean](PipeEnd(shuffleId, mapPartition, blockManagerId))
             if (!ret)
               throw new SparkException(s"frankfzw: The map ${mapPartition} of shuffle ${shuffleId} failed on notification")
@@ -317,7 +318,7 @@ private[spark] class BlockManager(
    * @param size
    */
   private def sendRequest(location: BlockManagerId, shuffleId: Int, mapId: Int, reduceId: Int, size: Long): Int = {
-    logInfo(s"frankfzw: Send pending request for shuffle: ${shuffleId}:${mapId}:${reduceId} at ${location}")
+    // logInfo(s"frankfzw: Send pending request for shuffle: ${shuffleId}:${mapId}:${reduceId} at ${location}")
     val blockArray = new Array[(BlockId, Long)](1)
     blockArray(0) = (ShuffleBlockId(shuffleId, mapId, reduceId), size)
     if (location.executorId != blockManagerId.executorId) {
