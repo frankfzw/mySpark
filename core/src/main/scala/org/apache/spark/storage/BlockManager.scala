@@ -175,7 +175,7 @@ private[spark] class BlockManager(
   private val shuffleIdToReducePartition: HashMap[Int, mutable.HashSet[Int]] = new HashMap
 
   // added by frankfzw. Do Bookkeeping for the state that whether the corresponding shuffle is cached
-  private val shuffleIdToCacheCondition: HashMap[Int, Int] = new HashMap
+  private val shuffleIdToCacheCondition: HashMap[Int, mutable.HashSet[Int]] = new HashMap
 
   private val shuffleIdToMapPartitionNumber: HashMap[Int, Int] = new HashMap
 
@@ -212,7 +212,7 @@ private[spark] class BlockManager(
     val totalReducePartition = reduceStatuses.length
     if (!shuffleIdToReducePartition.contains(shuffleId)) {
       val totalMapPartition = reduceStatuses(0).getTotalMapPartiton()
-      shuffleIdToCacheCondition += (shuffleId -> 0)
+      shuffleIdToCacheCondition += (shuffleId -> new mutable.HashSet[Int]())
       shuffleIdToMapPartitionNumber(shuffleId) = totalMapPartition
       shuffleIdToReducePartition += (shuffleId -> new mutable.HashSet[Int]())
       shuffleFetchResultQueue += (shuffleId -> new Array[LinkedBlockingQueue[FetchResult]](totalReducePartition))
@@ -241,7 +241,7 @@ private[spark] class BlockManager(
    */
   def isCached(shuffleId: Int, reduceId: Int): Boolean = {
     if (shuffleIdToReducePartition.contains(shuffleId)) {
-      return shuffleIdToReducePartition(shuffleId).contains(reduceId)
+      return shuffleIdToReducePartition(shuffleId).contains(reduceId) && !shuffleIdToCacheCondition(shuffleId).contains(reduceId)
     }
     false
   }
@@ -365,11 +365,11 @@ private[spark] class BlockManager(
   def getPendingFetchRequest(shuffleId: Int, startPartition: Int, endPartition: Int): Array[LinkedBlockingQueue[FetchResult]] = {
     // if (shuffleIdToCacheCondition(shuffleId) < shuffleIdToReducePartition(shuffleId).length) {
     logInfo(s"frankfzw: Read cache from LinkedBlockingQueue ${shuffleId}: ${startPartition} to ${endPartition}")
-    shuffleIdToCacheCondition(shuffleId) += endPartition - startPartition
     val buffer = new Array[LinkedBlockingQueue[FetchResult]](endPartition - startPartition)
     // val number = new Array[Int](endPartition - startPartition)
     for (i <- startPartition until endPartition) {
-      shuffleIdToReducePartition(shuffleId) -= i
+      // shuffleIdToReducePartition(shuffleId) -= i
+      shuffleIdToCacheCondition(shuffleId) += i
       buffer(i - startPartition) = shuffleFetchResultQueue(shuffleId)(i)
       //number(i - startPartition) = shuffleFetchBlockNumber(shuffleId)(i)
     }
