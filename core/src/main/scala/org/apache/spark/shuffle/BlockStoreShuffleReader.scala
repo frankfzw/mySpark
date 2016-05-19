@@ -80,7 +80,7 @@ private[spark] class BlockStoreShuffleReader[K, C](
       // Note: we use getSizeAsMb when no suffix is provided for backwards compatibility
       SparkEnv.get.conf.getSizeAsMb("spark.reducer.maxSizeInFlight", "48m") * 1024 * 1024)
 
-      // frankfzw: check if it get the real data from MapOutputTracker
+      // frankfzw: check if it gets the real data from MapOutputTracker
       if (blockFetcherItr.empty())
         return null
     }
