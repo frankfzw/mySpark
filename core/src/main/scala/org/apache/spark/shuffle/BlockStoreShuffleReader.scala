@@ -139,7 +139,7 @@ private[spark] class BlockStoreShuffleReader[K, C](
         // Create an ExternalSorter to sort the data. Note that if spark.shuffle.spill is disabled,
         // the ExternalSorter won't spill to disk.
         val sorter = new ExternalSorter[K, C, C](context, ordering = Some(keyOrd), serializer = Some(ser))
-        // shouldn't pass the shuffleId since we don'nt
+        // shouldn't pass the shuffleId since we don't
         sorter.insertAll(aggregatedIter)
         context.taskMetrics().incMemoryBytesSpilled(sorter.memoryBytesSpilled)
         context.taskMetrics().incDiskBytesSpilled(sorter.diskBytesSpilled)
